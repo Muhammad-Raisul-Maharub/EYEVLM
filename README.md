@@ -1,97 +1,77 @@
-# EyeVLM - Early Disease Detection System
+# EyeVLM - AI-Powered Eye Disease Detection
 
-**EyeVLM** is a cross-platform (Android, iOS, Web) Flutter application designed to assist in the early detection of eye diseases, specifically cataracts, using advanced AI-powered image analysis. It combines a user-friendly "Medical Soft UI" with a robust backend to provide instant, secure screening results.
+EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the early detection of eye diseases using advanced AI. It captures eye images, processes them via a secure backend, and provides instant analysis with confidence scores.
 
-## 📱 Key Features
+## 🚀 Key Features
 
-### 1. **Authentication & User Profiles**
-*   **Secure Login/Signup**: Powered by Supabase Authentication.
-*   **Modern Login UI**: Features a curved medical-themed header, animations, and clean input fields.
-*   **Profile Management**: "My Profile" screen with settings, ethical guidelines access, developer credits, and logout functionality.
-
-### 2. **Core Dashboard (Home Screen)**
-*   **"Start Scan" Hero Card**: A prominent, animated call-to-action for immediate screening.
-*   **Health Tips**: A horizontal carousel providing essential eye care advice (e.g., "20-20-20 Rule", "Stay Hydrated").
-*   **Personalization**: Displays user greeting and notification badge.
-
-### 3. **Smart Submission System**
-*   **Auto-Cropping**: Integrated `ImageCropper` forces a square aspect ratio to ensure the eye is perfectly centered for the AI model.
-*   **Image Alignment**: Guided UI with an overlay to help users position their eye correctly.
-*   **Scanning Animation**: A visual "Scanning..." effect during AI processing enhances user confidence.
-
-### 4. **AI Analysis & Results**
-*   **Instant Feedback**: Analyzes uploaded images to detect "Cataract" or "Healthy" conditions.
-*   **Confidence Score**: Displays the AI's confidence level (e.g., "98% Confidence").
-*   **Detailed Results Screen**: Shows the cropped image, diagnosis, and allows generating a PDF report.
-
-### 5. **Medical History & Reporting**
-*   **Visual History**: List of past scans with thumbnail previews and status chips (Healthy/Cataract).
-*   **Medical Report Card**: Tapping a history item opens a detailed popup dialog with:
-    *   Full analysis summary.
-    *   Date and symptoms.
-    *   **Share Option**: Easily share the report via standard system share sheet.
-    *   **Robust Delete**: Securely deletes both the database record and the stored image file.
-
----
+*   **⚡ Instant Analysis**: Sub-2s processing time with smart image compression (1024px, 80% Q).
+*   **📷 Dual Capture Mode**: Support for both Camera and Gallery uploads with auto-cropping.
+*   **📊 Comprehensive Results**: Detects **Cataract**, **Keratitis**, **Uveitis**, **Pterygium**, and **Conjunctivitis**.
+*   **📂 Cloud History**: Securely stores scan history with robust, instant deletion (Optimistic UI).
+*   **📄 Medical Reports**: "Download PDF" feature to generate professional reports for doctors.
+*   **🌙 Dark Mode**: Beautiful, instantly switching UI themes.
+*   **🔒 Secure**: Built with **Supabase** Authentication & Storage (RLS enabled).
 
 ## 🛠 Tech Stack
 
-### **Frontend (Mobile & Web)**
-*   **Framework**: [Flutter](https://flutter.dev/) (Dart)
-*   **State Management**: `flutter_riverpod`
-*   **Navigation**: `go_router`
-*   **Design System**: "Medical Soft UI" (Teal `#009688`, Poppins/Inter fonts, Material Icons).
-*   **Key Packages**:
-    *   `supabase_flutter`: Authentication & Database.
-    *   `image_cropper`: For precise image preparation.
-    *   `flutter_animate`: For seamless UI transitions.
-    *   `share_plus`: For sharing medical reports.
-    *   `printing` / `pdf`: For generating PDF reports.
+*   **Frontend**: Flutter (Riverpod, GoRouter, Google Fonts, Flutter Animate)
+*   **Backend**: Python FastAPI (Uvicorn)
+*   **Database & Auth**: Supabase
+*   **AI/ML**: Custom PyTorch Model (Integrated via Backend API)
 
-### **Backend**
-*   **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (Python)
-*   **Database**: Supabase (PostgreSQL)
-*   **Storage**: Supabase Storage (for eye images).
-*   **Deployment**: Railway (Backend services).
-
----
-
-## 🚀 How It Works
-
-1.  **User Logs In**: Authenticates securely via email/password.
-2.  **Start Scan**: Taps the "Start Scan" button on the dashboard.
-3.  **Capture & Crop**: Takes a photo or selects from the gallery. The app enforces a crop to focus strictly on the eye.
-4.  **AI Analysis**: The image is uploaded to the backend, processed by the AI model, and a diagnosis is returned.
-5.  **View Result**: The user sees the simple result ("Healthy" or "Cataract") with a confidence score.
-6.  **History**: The scan is saved to the medical history for future reference, sharing, or deletion.
-
----
-
-## 🏗 Setup & Running
+## 📦 Installation & Setup
 
 ### Prerequisites
-*   Flutter SDK (3.x)
-*   Python 3.10+ (for backend local dev)
+*   Flutter SDK (3.0+)
+*   Python 3.8+
+*   Supabase Account
 
-### 1. Run Backend (Local)
+### 1. Clone the Repository
 ```bash
-cd backend
-python -m venv .venv
-# Activate venv (Windows: .venv\Scripts\activate, Mac/Linux: source .venv/bin/activate)
-pip install -r requirements.txt
-uvicorn main:app --reload
+git clone https://github.com/Muhammad-Raisul-Maharub/EYEVLM.git
+cd EYEVLM
 ```
 
-### 2. Run App (Flutter)
+### 2. Backend Setup
+Navigate to the backend directory and install dependencies:
+```bash
+cd backend
+pip install fastapi uvicorn supabase python-multipart
+```
+Run the backend server:
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+*Note: Update `lib/core/constants/app_constants.dart` with your machine's IP address if running on a physical device.*
+
+### 3. Frontend Setup
+Install Flutter dependencies:
 ```bash
 flutter pub get
+```
+Run the app (Web):
+```bash
+flutter run -d chrome
+```
+Run the app (Mobile):
+```bash
 flutter run
 ```
 
-### 3. Assets
-Ensure `assets/images/logo.png` exists for branding.
+## 📱 Usage Guide
 
----
+1.  **Sign Up/Login**: Create an account to securely save your history.
+2.  **Home**: Tap "Start New Scan".
+3.  **Capture**: Take a photo or pick from gallery. Crop to center the eye.
+4.  **Analyze**: Tap "Analyze Scan". Results appear instantly.
+5.  **History**: View past scans, download PDF reports, or swipe to delete.
 
-**Designed & Developed by Raisul Maharub**
-*Version 1.0.0*
+## 🤝 Contributing
+
+Contributions are welcome! Please fork the repository and submit a pull request.
+
+## 📄 License
+This project is licensed under the MIT License.
+
+## ⚠️ Disclaimer
+**EyeVLM is an early indication tool, NOT a replacement for professional medical diagnosis.** Always consult a certified ophthalmologist.
