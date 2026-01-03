@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-jose
+requests
+torch
+torchvision
+pillow
+python-dotenv

@@ -1,0 +1,207 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../core/localization/app_strings.dart';
+import 'auth_service.dart';
+
+class LoginScreen extends ConsumerStatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends ConsumerState<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  bool _isPasswordVisible = false;
+  String? _errorMessage;
+
+  Future<void> _handleLogin() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ref.read(authServiceProvider).signIn(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
+      
+      if (mounted) {
+        context.go('/');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().contains('Invalid login credentials') 
+              ? 'Invalid email or password' 
+              : 'Login failed: ${e.toString()}';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // 🌊 1. CURVED HEADER
+            Container(
+              height: 300,
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Color(0xFF009688),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(40),
+                  bottomRight: Radius.circular(40),
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.remove_red_eye, size: 80, color: Colors.white)
+                      .animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
+                  const SizedBox(height: 16),
+                  Text(
+                    "EyeVLM Research",
+                    style: GoogleFonts.poppins(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    "Early Disease Detection System",
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: Colors.white.withAlpha(230),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 40),
+
+            // 📝 2. LOGIN FORM
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  if (_errorMessage != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+                        textAlign: TextAlign.center,
+                      ),
+                    ).animate().fadeIn(),
+
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: "Email Address",
+                      prefixIcon: Icon(Icons.email),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: !_isPasswordVisible,
+                    decoration: InputDecoration(
+                      labelText: "Password",
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _isPasswordVisible = !_isPasswordVisible;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  
+                  // Forgot Password Placeholder
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () {
+                         // TODO: Implement actual reset logic
+                         ScaffoldMessenger.of(context).showSnackBar(
+                           const SnackBar(content: Text("Reset password feature coming soon.")),
+                         );
+                      }, 
+                      child: const Text("Forgot Password?", style: TextStyle(color: Colors.grey)),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleLogin,
+                      child: _isLoading 
+                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text("Log In Securely"),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: () => context.push('/signup'),
+                    child: Text(AppStrings.tr(ref, 'msgNoAccount')),
+                  ),
+
+                ],
+              ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2),
+            ),
+
+            const SizedBox(height: 60),
+
+            // 👨‍💻 3. BRANDING FOOTER
+            RichText(
+              textAlign: TextAlign.center,
+              text: TextSpan(
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: Colors.grey[500],
+                  height: 1.5, 
+                ),
+                children: [
+                  const TextSpan(text: "Designed & Developed by\n"), 
+                  TextSpan(
+                    text: "Raisul Maharub",
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600), 
+                  ),
+                  const TextSpan(text: "\nVersion 1.0.0"),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
