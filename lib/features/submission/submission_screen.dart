@@ -7,6 +7,7 @@ import 'package:dotted_border/dotted_border.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/providers/refresh_provider.dart';
 
 import 'submission_service.dart';
 
@@ -95,6 +96,9 @@ class _SubmissionScreenState extends ConsumerState<SubmissionScreen> {
         final finalResult = Map<String, dynamic>.from(result);
         finalResult['saved_image_url'] = imageUrl;
         finalResult['symptoms'] = _symptomsController.text.trim();
+
+        // Trigger History Refresh
+        ref.read(historyRefreshProvider.notifier).trigger();
 
         context.go('/result', extra: finalResult); 
       }

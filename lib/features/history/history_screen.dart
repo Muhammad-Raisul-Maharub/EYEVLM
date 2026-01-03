@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/localization/app_strings.dart';
+import '../../core/providers/refresh_provider.dart';
 import 'history_details_dialog.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
@@ -195,6 +196,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Listen for manual refresh triggers (e.g. from SubmissionScreen)
+    ref.listen<int>(historyRefreshProvider, (previous, next) {
+      if (next > (previous ?? 0)) {
+        debugPrint("🔄 HistoryScreen: Refresh triggered via Provider!");
+        _initStream();
+      }
+    });
+
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) {
       return const Scaffold(body: Center(child: Text("Please log in.")));
