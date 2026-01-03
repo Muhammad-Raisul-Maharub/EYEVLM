@@ -4,7 +4,7 @@ EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the 
 
 ## 🚀 Key Features
 
-*   **⚡ Instant Analysis**: Sub-2s processing time with smart image compression (1024px, 80% Q).
+*   **🖼️ High-Fidelity Capture**: Preserves full-resolution images for accurate clinical annotation and future model training.
 *   **📷 Dual Capture Mode**: Support for both Camera and Gallery uploads with auto-cropping.
 *   **📊 Comprehensive Results**: Detects **Cataract**, **Keratitis**, **Uveitis**, **Pterygium**, and **Conjunctivitis**.
 *   **📂 Cloud History**: Securely stores scan history with robust, instant deletion (Optimistic UI).
