@@ -1,6 +1,12 @@
 # EyeVLM - AI-Powered Eye Disease Detection
 
+
 EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the early detection of eye diseases using advanced AI. It captures eye images, processes them via a secure backend, and provides instant analysis with confidence scores.
+
+## 🌐 Live Demo
+*   **Web App**: [https://eyevlm-web.vercel.app](https://eyevlm-web.vercel.app)
+*   **Backend API**: [https://eyevlm-backend.onrender.com](https://eyevlm-backend.onrender.com)
+
 
 ## 🚀 Key Features
 
