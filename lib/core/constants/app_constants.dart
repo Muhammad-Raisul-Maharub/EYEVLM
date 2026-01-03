@@ -12,6 +12,6 @@ class AppConstants {
   static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsaHFjemVvb2tseXFudm52Y3FjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MTY3MDgsImV4cCI6MjA4MTk5MjcwOH0.wHCdB3onA5N5DqEdVYcXprBHBXcUvTfFaH3v0WZpjpA';
 
   // Backend Base URL
-  // Use computer's IP address (e.g. 192.168.x.x) for physical device testing
-  static const String baseUrl = 'http://192.168.0.200:8000';
+  // LIVE PRODUCTION URL
+  static const String baseUrl = 'https://eyevlm-backend.onrender.com';
 }
