@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -68,6 +70,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  Future<void> _downloadApk() async {
+    final Uri url = Uri.parse('https://drive.google.com/file/d/1hwTOH1jhE8sWYBv5xYmM31JhQx5eoaYQ/view?usp=sharing');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open download link')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
@@ -96,6 +109,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
         ),
         actions: [
+          if (kIsWeb)
+            IconButton(
+              icon: const Icon(Icons.android, color: Color(0xFF3DDC84)),
+              tooltip: 'Download Android App',
+              onPressed: _downloadApk,
+            ),
           IconButton(
             icon: const Icon(Icons.notifications, color: Colors.grey),
             onPressed: () {
