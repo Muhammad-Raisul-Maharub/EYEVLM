@@ -42,7 +42,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         // Generate Path: medical_records/USER_ID/TIMESTAMP_FILENAME
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final extension = file.extension ?? 'file';
         final path = 'medical_records/${user.id}/${timestamp}_${file.name}';
 
         // Read file bytes - handling Web (bytes) and Native (path)
