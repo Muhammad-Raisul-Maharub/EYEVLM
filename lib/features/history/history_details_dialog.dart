@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:intl/intl.dart';
 import '../../core/services/pdf_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void showHistoryDetails(BuildContext context, Map<String, dynamic> scan, Function(int, String) onDelete) {
   final DateTime date = DateTime.parse(scan['created_at']);
@@ -135,6 +136,32 @@ void showHistoryDetails(BuildContext context, Map<String, dynamic> scan, Functio
                         : scan['symptoms'],
                   ),
 
+                  // 📄 3.5 ATTACHMENTS (New)
+                  if (scan['clinical_data'] != null && 
+                      scan['clinical_data']['attachments'] != null && 
+                      (scan['clinical_data']['attachments'] as List).isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text("Attached Documents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 8),
+                      ...(scan['clinical_data']['attachments'] as List).map<Widget>((file) {
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.attachment, color: Colors.teal),
+                            title: Text(file['name'] ?? 'Document', maxLines: 1, overflow: TextOverflow.ellipsis),
+                            trailing: const Icon(Icons.open_in_new, size: 16),
+                            onTap: () async {
+                               final url = Uri.parse(file['url']);
+                               if (await canLaunchUrl(url)) {
+                                 await launchUrl(url);
+                               }
+                            },
+                          ),
+                        );
+                      }),
+                  ],
+
                   const SizedBox(height: 30),
 
                   // 🚀 4. ACTION BUTTONS
@@ -142,18 +169,23 @@ void showHistoryDetails(BuildContext context, Map<String, dynamic> scan, Functio
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () {
+                          onPressed: () async {
                             // Generate and Share PDF
-                            PdfService().generateAndShareReport(
-                              imageUrl: scan['image_url'],
-                              prediction: scan['prediction'],
-                              confidence: "${(scan['confidence'] * 100).toInt()}%",
-                              symptoms: (scan['symptoms'] == null || scan['symptoms'].isEmpty) ? "None" : scan['symptoms'],
-                              date: formattedDate,
-                            );
+                            try {
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 const SnackBar(content: Text('Generating Report...'), duration: Duration(seconds: 1)),
+                               );
+                               await PdfService().generateAndShareReport(scan);
+                            } catch (e) {
+                               if (context.mounted) {
+                                 ScaffoldMessenger.of(context).showSnackBar(
+                                   SnackBar(content: Text('Failed to download: $e'), backgroundColor: Colors.red),
+                                 );
+                               }
+                            }
                           },
                           icon: const Icon(Icons.download),
-                          label: const Text("Download PDF"),
+                          label: const Text("Download Report"),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             side: BorderSide(color: Colors.grey.shade300),

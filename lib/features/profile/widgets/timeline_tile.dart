@@ -71,7 +71,7 @@ class TimelineTile extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).cardTheme.color,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
@@ -92,15 +92,16 @@ class TimelineTile extends StatelessWidget {
                       children: [
                         Text(
                           title, 
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.bold, 
                             fontSize: 16,
+                            color: Theme.of(context).textTheme.bodyLarge?.color,
                           ),
                         ),
                         Text(
                           date,
                           style: TextStyle(
-                            color: Colors.grey[500],
+                            color: Theme.of(context).textTheme.bodySmall?.color?.withAlpha(128),
                             fontSize: 12,
                           ),
                         ),
@@ -109,7 +110,10 @@ class TimelineTile extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       description,
-                      style: TextStyle(color: Colors.grey[700], height: 1.4),
+                      style: TextStyle(
+                         color: Theme.of(context).textTheme.bodyMedium?.color?.withAlpha(200),
+                         height: 1.4
+                      ),
                     ),
                   ],
                 ),

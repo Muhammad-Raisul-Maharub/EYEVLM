@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import '../../core/services/pdf_service.dart';
 
 class ScanResultScreen extends StatelessWidget {
@@ -127,13 +126,14 @@ class ScanResultScreen extends StatelessWidget {
                   child: ElevatedButton.icon(
                     onPressed: () {
                       if (imageUrl != null) {
-                         PdfService().generateAndShareReport(
-                           imageUrl: imageUrl, 
-                           prediction: prediction, 
-                           confidence: confidencePercent, 
-                           symptoms: symptoms, 
-                           date: DateFormat('yyyy-MM-dd').format(DateTime.now()),
-                         );
+                         PdfService().generateAndShareReport({
+                           'id': 'New_Scan',
+                           'created_at': DateTime.now().toIso8601String(),
+                           'image_url': imageUrl,
+                           'prediction': prediction,
+                           'confidence': confidenceValue, // Pass double directly
+                           'symptoms': symptoms,
+                         });
                       } else {
                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Image URL missing, cannot generate PDF")));
                       }

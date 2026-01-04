@@ -1,7 +1,7 @@
 {
     "rewrites": [
         {
-            "source": "/(.*)",
+            "source": "/((?!.*\\.).*)",
             "destination": "/index.html"
         }
     ],
@@ -24,6 +24,10 @@
                 {
                     "key": "Cross-Origin-Opener-Policy",
                     "value": "same-origin"
+                },
+                {
+                    "key": "Content-Security-Policy",
+                    "value": "default-src 'self' data: https:; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdnjs.cloudflare.com blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https: wss:;"
                 }
             ]
         },

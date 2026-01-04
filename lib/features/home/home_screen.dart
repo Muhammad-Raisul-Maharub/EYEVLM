@@ -74,7 +74,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _downloadApk() async {
-    final Uri url = Uri.parse('https://drive.google.com/file/d/1zBmf-uGQnltpZG5DyEngS1VxJOaGC2kU/view?usp=sharing');
+    // URL points to the APK file hosted on the same server (in /apk folder)
+    final Uri url = Uri.parse('/apk/app-release.apk');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

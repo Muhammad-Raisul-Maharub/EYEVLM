@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -69,7 +70,7 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
         camera,
         ResolutionPreset.high, // High Res for Data Collection
         enableAudio: false,
-        imageFormatGroup: Platform.isAndroid 
+        imageFormatGroup: kIsWeb || Platform.isAndroid 
             ? ImageFormatGroup.nv21 
             : ImageFormatGroup.bgra8888,
       );
@@ -84,6 +85,13 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
       // Start the Image Stream for ML Analysis
       await _controller!.startImageStream(_processCameraImage);
       _updateStatus("Position your eye in the frame", Colors.orange);
+    } on CameraException catch (e) {
+      debugPrint("Camera error: ${e.code} - ${e.description}");
+      String message = "Camera error: ${e.description}";
+      if (e.code == 'cameraNotReadable' || e.code == 'CameraAccessDenied') {
+         message = "Camera is busy or access denied. Please close other apps using the camera and refresh.";
+      }
+      _updateStatus(message, Colors.red);
     } catch (e) {
       debugPrint("Camera initialization error: $e");
       _updateStatus("Camera error: $e", Colors.red);

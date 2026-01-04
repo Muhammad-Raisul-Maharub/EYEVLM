@@ -1,13 +1,11 @@
 import 'dart:ui';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
-import 'package:eyevlm_app/core/theme/app_tokens.dart';
 import 'package:eyevlm_app/features/profile/widgets/timeline_tile.dart';
 import 'package:eyevlm_app/core/utils/app_notifications.dart';
+import 'package:intl/intl.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -19,76 +17,6 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final ScrollController _scrollController = ScrollController();
 
-  Future<void> _pickMedicalRecord() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'png', 'doc', 'docx'],
-        withData: true, // Important for Web to get bytes
-      );
-
-      if (result != null) {
-        final file = result.files.single;
-        final user = Supabase.instance.client.auth.currentUser;
-        
-        if (user == null) {
-           if (mounted) AppNotifications.showError(context, "You must be logged in.");
-           return;
-        }
-
-        if (mounted) {
-           AppNotifications.showInfo(context, "Uploading ${file.name}...");
-        }
-
-        // Generate Path: medical_records/USER_ID/TIMESTAMP_FILENAME
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final path = 'medical_records/${user.id}/${timestamp}_${file.name}';
-
-        // Read file bytes - handling Web (bytes) and Native (path)
-        Uint8List fileBytes;
-        if (file.bytes != null) {
-          fileBytes = file.bytes!;
-        } else if (file.path != null) {
-          // On Mobile/Desktop, read from path
-          // Note: 'dart:io' File is not available on Web, but FilePicker usually gives bytes on Web if withData: true
-          // We need a conditional import or just use a helper if strictly necessary. 
-          // However, since we don't have a cross-platform file helper handy for 'path -> bytes' in this snippet without dart:io,
-          // we'll assume withData:true provides bytes for small files, or we rely on logic that works.
-          // For now, let's use a dynamic approach or just rely on 'bytes' being populated for cross-platform convenience if possible.
-          // But FilePicker documentation says: "On web, `path` is always null." "On mobile, `bytes` is null unless `withData` is set."
-          // So setting `withData: true` covering both is safest for small files.
-          // For larger files on mobile, we'd want 'path', but let's stick to bytes for simplicity of "Medical Records" (docs/images).
-          // If bytes are null on mobile despite withData:true (rare, but memory constraint), we'd need dart:io.
-          // Let's assume bytes are present.
-          throw Exception("Could not read file data.");
-        } else {
-           throw Exception("Unsupported file source.");
-        }
-
-        await Supabase.instance.client.storage.from('eye-images').uploadBinary(
-          path,
-          fileBytes,
-          fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-        );
-
-        if (mounted) {
-           AppNotifications.showSuccess(context, "Uploaded: ${file.name}");
-        }
-      }
-    } catch (e) {
-      debugPrint("Upload error: $e");
-      if (mounted) {
-        // Fallback for the "bytes null on mobile" case to handle it gracefully if it happens
-        if (e.toString().contains("Could not read")) {
-           // Retry with path if possible (requires dart:io import which we might not want to mix if this is a web-heavy file)
-           // But since profile_screen imports universal libs, let's just show error.
-           AppNotifications.showError(context, "Could not read file. Try a smaller file.");
-        } else {
-           AppNotifications.showError(context, "Upload failed: $e");
-        }
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -121,12 +49,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _pickMedicalRecord,
-        backgroundColor: AppColors.lightPrimary,
-        icon: const Icon(Icons.upload_file, color: Colors.white),
-        label: const Text("Upload Records", style: TextStyle(color: Colors.white)),
       ),
     );
   }
@@ -169,8 +91,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       boxShadow: [
                         BoxShadow(color: Colors.black.withAlpha(50), blurRadius: 20),
                       ],
-                      image: const DecorationImage(
-                        image: NetworkImage('https://ui-avatars.com/api/?name=User&background=random&size=200'), 
+                      image: DecorationImage(
+                        image: NetworkImage('https://ui-avatars.com/api/?name=${Uri.encodeComponent(name)}&background=random&size=200'), 
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -194,15 +116,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   
                   const SizedBox(height: 20),
                   // Stats Row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildHeaderStat("Scans", "12"),
-                      Container(height: 30, width: 1, color: Colors.white30, margin: const EdgeInsets.symmetric(horizontal: 20)),
-                      _buildHeaderStat("Health", "Good"),
-                      Container(height: 30, width: 1, color: Colors.white30, margin: const EdgeInsets.symmetric(horizontal: 20)),
-                      _buildHeaderStat("Member", "Pro"),
-                    ],
+                  StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: Supabase.instance.client.from('scans').stream(primaryKey: ['id']).eq('user_id', Supabase.instance.client.auth.currentUser!.id),
+                    builder: (context, snapshot) {
+                      final count = snapshot.data?.length ?? 0;
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildHeaderStat("Scans", "$count"),
+                          Container(height: 30, width: 1, color: Colors.white30, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                          _buildHeaderStat("Health", "Tracked"),
+                          Container(height: 30, width: 1, color: Colors.white30, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                          _buildHeaderStat("Member", "Free"),
+                        ],
+                      );
+                    }
                   ),
                 ],
               ),
@@ -223,33 +151,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildMedicalHistory() {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Medical Timeline", style: Theme.of(context).textTheme.titleLarge),
+          Text("Recent Activity", style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),
-          // Demo Data
-          const TimelineTile(
-            title: "Cataract Screening",
-            date: "Today, 10:30 AM",
-            description: "Routine AI screening performed. No significant anomalies detected.",
-            isFirst: true,
-            isHighRisk: false,
-          ),
-          const TimelineTile(
-            title: "Consultation Call",
-            date: "Dec 28, 2025",
-            description: "Video consultation with Dr. Aishwarya regarding eye strain.",
-            isHighRisk: false,
-          ),
-          const TimelineTile(
-            title: "High Pressure Alert",
-            date: "Nov 15, 2025",
-            description: "Detected slightly elevated intraocular pressure indicators.",
-            isHighRisk: true,
-            isLast: true,
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: Supabase.instance.client.from('scans').stream(primaryKey: ['id']).eq('user_id', userId).order('created_at', ascending: false).limit(2),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return const Text("No recent scans found.", style: TextStyle(color: Colors.grey));
+              }
+              final scans = snapshot.data!;
+              return Column(
+                children: scans.map((scan) {
+                   final date = DateTime.parse(scan['created_at']);
+                   final prediction = scan['prediction'] ?? 'Processing';
+                   return TimelineTile(
+                     title: prediction,
+                     date: DateFormat('MMM d, h:mm a').format(date),
+                     description: scan['suspected_disease'] ?? 'Routine Scan',
+                     isHighRisk: prediction != 'Healthy' && prediction != 'Pending',
+                     isFirst: scans.first == scan,
+                     isLast: scans.last == scan,
+                   );
+                }).toList(),
+              );
+            },
           ),
         ],
       ),
@@ -301,9 +234,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
           style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[400]),
         ),
         const SizedBox(height: 4),
+        // Designed & Developed by
         Text(
-          "Secure • Private • AI Powered",
-          style: GoogleFonts.inter(fontSize: 10, color: Colors.grey[300]),
+          "Designed & Developed by",
+          style: GoogleFonts.inter(
+            fontSize: 12, 
+            color: Colors.grey[500],
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 4),
+        
+        // Raisul Maharub
+        Text(
+          "Raisul Maharub",
+          style: GoogleFonts.inter(
+            fontSize: 14, 
+            fontWeight: FontWeight.bold, 
+            color: Colors.grey[700],
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 4),
+
+        // Version 1.0.0
+        Text(
+          "Version 1.0.0",
+          style: GoogleFonts.inter(
+            fontSize: 12, 
+            color: Colors.grey[400],
+          ),
         ),
       ],
     );

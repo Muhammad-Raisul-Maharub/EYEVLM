@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+// Added: Uint8List
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,7 +12,9 @@ import 'package:intl/intl.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/providers/refresh_provider.dart';
 import '../../core/utils/app_notifications.dart'; // Import
+import '../../core/services/pdf_service.dart';
 import 'history_details_dialog.dart';
+// Added: Printing
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -450,12 +453,31 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                                                       : Colors.orange,
                                                 ),
                                               ),
-                                            ),
-                                        ],
                                       ),
                                     ],
                                   ),
-                                ),
+                                  const SizedBox(height: 8),
+                                  InkWell(
+                                    onTap: () => _downloadPdf(scan),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.picture_as_pdf, size: 16, color: Colors.teal.shade700),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          "Download Report",
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.teal.shade700,
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: Colors.redAccent),
                                   onPressed: () => showDeleteConfirmation(
@@ -486,5 +508,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _downloadPdf(Map<String, dynamic> scan) async {
+    try {
+      if (!mounted) return;
+      AppNotifications.showInfo(context, "Generating Report...");
+      
+      await PdfService().generateAndShareReport(scan);
+      
+    } catch (e) {
+      if (mounted) AppNotifications.showError(context, "Failed to generate PDF: $e");
+    }
   }
 }

@@ -5,7 +5,6 @@ class AppColors {
   // 1. PRIMITIVES (The Raw Palette)
   // ===========================================================================
   static const Color _tealPrimary = Color(0xFF009688); // Brand Color
-  static const Color _tealLight = Color(0xFF52C7B8); // Lighter for Dark Mode
   static const Color _darkSurface = Color(0xFF121212); // True Black
   static const Color _darkCard = Color(0xFF1E1E24);
   static const Color _lightBackground = Color(0xFFF5F9FA);

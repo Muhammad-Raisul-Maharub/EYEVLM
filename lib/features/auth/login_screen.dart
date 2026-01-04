@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/widgets/responsive_wrapper.dart';
 import '../../core/utils/app_notifications.dart'; // Import
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -230,10 +231,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
-            onPressed: () {
-               // TODO: Implement actual reset logic
-               AppNotifications.showInfo(context, "Reset password feature coming soon.");
-            }, 
+            onPressed: () => _showResetPasswordDialog(), 
             child: const Text("Forgot Password?", style: TextStyle(color: Colors.grey)),
           ),
         ),
@@ -277,6 +275,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const TextSpan(text: "\nVersion 1.0.0"),
         ],
       ),
+    );
+  }
+
+  Future<void> _showResetPasswordDialog() async {
+    final resetEmailController = TextEditingController();
+    
+    return showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text("Reset Password"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Enter your email address to receive a password reset link."),
+              const SizedBox(height: 16),
+              TextField(
+                controller: resetEmailController,
+                decoration: const InputDecoration(labelText: "Email", border: OutlineInputBorder()),
+                keyboardType: TextInputType.emailAddress,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final email = resetEmailController.text.trim();
+                if (email.isEmpty) return;
+
+                Navigator.pop(dialogContext); // Close dialog
+                
+                try {
+                  await Supabase.instance.client.auth.resetPasswordForEmail(email);
+                  if (mounted) {
+                     AppNotifications.showSuccess(context, "Check your email for the reset link!");
+                  }
+                } catch (e) {
+                  if (mounted) {
+                     AppNotifications.showError(context, "Error: $e");
+                  }
+                }
+              },
+              child: const Text("Send Link"),
+            ),
+          ],
+        );
+      },
     );
   }
 }
