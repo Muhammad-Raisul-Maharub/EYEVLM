@@ -11,10 +11,16 @@ import 'app_router.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: AppConstants.supabaseUrl,
-    anonKey: AppConstants.supabaseAnonKey,
-  );
+  try {
+    await Supabase.initialize(
+      url: AppConstants.supabaseUrl,
+      anonKey: AppConstants.supabaseAnonKey,
+    );
+  } catch (e) {
+    debugPrint("⚠️ Supabase Initialization Failed: $e");
+    // Only blocking if Supabase is absolutely strictly required for ANY UI 
+    // But we prefer showing the app with an error state over a blank white screen.
+  }
 
   // Global Error Handler ("The Backup")
   ErrorWidget.builder = (FlutterErrorDetails details) {
