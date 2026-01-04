@@ -39,7 +39,7 @@ class BaseScaffold extends StatelessWidget {
       // Here is the Magic: We wrap EVERY screen in the Background + Responsive logic
       body: AnimatedBackground(
         child: ResponsiveWrapper(
-          child: body,
+          mobileBody: body,
         ),
       ),
     );

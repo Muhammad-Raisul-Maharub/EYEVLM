@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:eyevlm_app/core/theme/app_tokens.dart';
+import 'package:eyevlm_app/core/theme/app_tokens.dart'; // Ensure AppColors is available (same file)
 
 class AnimatedBackground extends StatefulWidget {
   final Widget? child;
@@ -47,7 +47,7 @@ class _AnimatedBackgroundState extends State<AnimatedBackground> with SingleTick
                 Positioned(
                   top: -50 + (_controller.value * 30), 
                   left: -50 + (_controller.value * 20),
-                  child: _buildBlob(AppTokens.brandPrimary.withAlpha(77)),
+                  child: _buildBlob(AppColors.lightPrimary.withAlpha(77)),
                 ),
                 // Bottom Right Blob (Moves slowly left/up)
                 Positioned(

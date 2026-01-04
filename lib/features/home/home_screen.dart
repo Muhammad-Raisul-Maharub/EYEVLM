@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../core/widgets/responsive_wrapper.dart'; // Added: Responsive Support
 
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -129,115 +130,159 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 🚀 1. HERO ACTION CARD
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF009688), Color(0xFF4DB6AC)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF009688).withAlpha(77),
-                        blurRadius: 15,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Start Eye Screening",
-                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "Use AI to detect potential early signs of cataract.",
-                              style: TextStyle(color: Colors.white.withAlpha(230), fontSize: 12),
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton.icon(
-                              onPressed: () => context.go('/scan'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF009688),
-                              ),
-                              icon: const Icon(Icons.camera_alt),
-                              label: const Text("Scan Now"),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.qr_code_scanner, color: Colors.white24, size: 80),
-                    ],
-                  ),
-                ).animate().slideX(),
+      body: ResponsiveWrapper(
+        mobileBody: _buildMobileLayout(context),
+        webBody: _buildWebLayout(context),
+      ),
+    );
+  }
 
-                const SizedBox(height: 30),
-
-                // 📊 2. HEALTH TIPS (Interactive)
-                Text("Eye Health Tips", style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 120,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: const [
-                      _TipCard(
-                        icon: Icons.wb_sunny, 
-                        title: "Wear Sunglasses", 
-                        color: Colors.orange,
-                        desc: "Protect your eyes from harmful UV rays which can accelerate cataract formation. Look for 100% UVA/UVB protection.",
-                      ),
-                      _TipCard(
-                        icon: Icons.water_drop, 
-                        title: "Stay Hydrated", 
-                        color: Colors.blue,
-                        desc: "Proper hydration is essential for tear production and keeping eyes moist. Drink at least 8 glasses of water daily.",
-                      ),
-                      _TipCard(
-                        icon: Icons.access_time, 
-                        title: "20-20-20 Rule", 
-                        color: Colors.purple,
-                        desc: "Every 20 minutes, look at something 20 feet away for at least 20 seconds to reduce digital eye strain.",
-                      ),
-                      _TipCard(
-                        icon: Icons.restaurant, 
-                        title: "Eat Healthy", 
-                        color: Colors.green,
-                        desc: "A diet rich in leafy greens (spinach, kale), fish, and nuts provides antioxidants essential for long-term vision health.",
-                      ),
-                      _TipCard(
-                        icon: Icons.clean_hands, 
-                        title: "Be Hygienic", 
-                        color: Colors.teal,
-                        desc: "Always wash your hands thoroughly before touching your eyes or handling contact lenses to prevent infections.",
-                      ),
-                    ],
-                  ),
+  Widget _buildMobileLayout(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeroCard(),
+              const SizedBox(height: 30),
+              Text("Eye Health Tips", style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 120,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: _buildTipsList(),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildWebLayout(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1000), // Wider for Web
+        child: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeroCard(),
+              const SizedBox(height: 40),
+              Text("Eye Health Tips", style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 16),
+              // Grid for Web
+              GridView.count(
+                crossAxisCount: 5,
+                shrinkWrap: true,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 1.2,
+                physics: const NeverScrollableScrollPhysics(),
+                children: _buildTipsList(isWeb: true),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF009688), Color(0xFF4DB6AC)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF009688).withAlpha(77),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Start Eye Screening",
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Use AI to detect potential early signs of cataract.",
+                  style: TextStyle(color: Colors.white.withAlpha(230), fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () => context.go('/scan'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF009688),
+                  ),
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text("Scan Now"),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.qr_code_scanner, color: Colors.white24, size: 80),
+        ],
+      ),
+    ).animate().slideX();
+  }
+
+  List<Widget> _buildTipsList({bool isWeb = false}) {
+    final tips = [
+      const _TipCard(
+        icon: Icons.wb_sunny, 
+        title: "Wear Sunglasses", 
+        color: Colors.orange,
+        desc: "Protect your eyes from harmful UV rays which can accelerate cataract formation. Look for 100% UVA/UVB protection.",
+      ),
+      const _TipCard(
+        icon: Icons.water_drop, 
+        title: "Stay Hydrated", 
+        color: Colors.blue,
+        desc: "Proper hydration is essential for tear production and keeping eyes moist. Drink at least 8 glasses of water daily.",
+      ),
+      const _TipCard(
+        icon: Icons.access_time, 
+        title: "20-20-20 Rule", 
+        color: Colors.purple,
+        desc: "Every 20 minutes, look at something 20 feet away for at least 20 seconds to reduce digital eye strain.",
+      ),
+      const _TipCard(
+        icon: Icons.restaurant, 
+        title: "Eat Healthy", 
+        color: Colors.green,
+        desc: "A diet rich in leafy greens (spinach, kale), fish, and nuts provides antioxidants essential for long-term vision health.",
+      ),
+      const _TipCard(
+        icon: Icons.clean_hands, 
+        title: "Be Hygienic", 
+        color: Colors.teal,
+        desc: "Always wash your hands thoroughly before touching your eyes or handling contact lenses to prevent infections.",
+      ),
+    ];
+    
+    // For web grid, we let it expand. For mobile list, we force width.
+    return tips.map((t) => isWeb ? t : SizedBox(width: 110, child: t)).toList();
   }
 }
 
@@ -256,9 +301,13 @@ class _TipCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // If in a Grid (Web), we want it to fill available space. 
+    // If in a List (Mobile), we keep the fixed width.
+    // For simplicity, we keep width but wrap in SizedBox if not expanded.
+    // However, GridView forces child size. So let's make the container flexible.
     return Container(
-      width: 110,
-      margin: const EdgeInsets.only(right: 12),
+      // width: 110, // Removed fixed width constraint for flexibility
+      margin: const EdgeInsets.only(right: 12), // Keep margin for list view
       child: Material(
         color: color[50], // Background color
         borderRadius: BorderRadius.circular(16),

@@ -295,7 +295,7 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(color: AppTokens.brandPrimary),
+              const CircularProgressIndicator(color: AppColors.lightPrimary),
               const SizedBox(height: 20),
               Text(
                 _statusMessage,
@@ -444,7 +444,7 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
                 // Manual Capture Button
                 FloatingActionButton.large(
                   heroTag: "capture",
-                  backgroundColor: AppTokens.brandPrimary,
+                  backgroundColor: AppColors.lightPrimary,
                   onPressed: _isCapturing ? null : () => _takePicture(),
                   child: _isCapturing 
                       ? const CircularProgressIndicator(color: Colors.white)

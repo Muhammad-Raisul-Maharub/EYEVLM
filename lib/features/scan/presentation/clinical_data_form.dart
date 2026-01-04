@@ -47,7 +47,7 @@ class _ClinicalDataFormState extends State<ClinicalDataForm> {
     return Scaffold(
       appBar: AppBar(title: const Text("Clinical Context")),
       body: ResponsiveWrapper(
-        child: Column(
+        mobileBody: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Image preview if available

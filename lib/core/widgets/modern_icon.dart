@@ -23,7 +23,7 @@ class ModernIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = activeColor ?? AppTokens.brandPrimary;
+    final primaryColor = activeColor ?? AppColors.lightPrimary;
     final secondaryColor = inactiveColor ?? Colors.grey.shade700;
 
     return GestureDetector(
@@ -73,7 +73,7 @@ class ModernIconButton extends StatelessWidget {
     final iconWidget = Icon(
       icon,
       size: size,
-      color: color ?? AppTokens.brandPrimary,
+      color: color ?? AppColors.lightPrimary,
     );
 
     if (tooltip != null) {
