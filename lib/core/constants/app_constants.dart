@@ -1,9 +1,5 @@
 class AppConstants {
   static const String appName = 'EyeVLM';
-  // TODO: Replace with your actual Gemini API Key
-  // You can get one from https://makersuite.google.com/app/apikey
-  static const String geminiApiKey = 'REPLACE_WITH_YOUR_GEMINI_API_KEY';
-  
   static const String onboardingTitle = 'Visual Intelligence';
   static const String onboardingSubtitle = 'Analyze the world around you with the power of Gemini AI.';
 

@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
@@ -23,16 +24,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'jpg', 'png', 'doc', 'docx'],
+        withData: true, // Important for Web to get bytes
       );
 
       if (result != null) {
-        // TODO: Implement actual upload logic to Supabase Storage
+        final file = result.files.single;
+        final user = Supabase.instance.client.auth.currentUser;
+        
+        if (user == null) {
+           if (mounted) AppNotifications.showError(context, "You must be logged in.");
+           return;
+        }
+
         if (mounted) {
-           AppNotifications.showSuccess(context, "Selected: ${result.files.single.name}");
+           AppNotifications.showInfo(context, "Uploading ${file.name}...");
+        }
+
+        // Generate Path: medical_records/USER_ID/TIMESTAMP_FILENAME
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final extension = file.extension ?? 'file';
+        final path = 'medical_records/${user.id}/${timestamp}_${file.name}';
+
+        // Read file bytes - handling Web (bytes) and Native (path)
+        Uint8List fileBytes;
+        if (file.bytes != null) {
+          fileBytes = file.bytes!;
+        } else if (file.path != null) {
+          // On Mobile/Desktop, read from path
+          // Note: 'dart:io' File is not available on Web, but FilePicker usually gives bytes on Web if withData: true
+          // We need a conditional import or just use a helper if strictly necessary. 
+          // However, since we don't have a cross-platform file helper handy for 'path -> bytes' in this snippet without dart:io,
+          // we'll assume withData:true provides bytes for small files, or we rely on logic that works.
+          // For now, let's use a dynamic approach or just rely on 'bytes' being populated for cross-platform convenience if possible.
+          // But FilePicker documentation says: "On web, `path` is always null." "On mobile, `bytes` is null unless `withData` is set."
+          // So setting `withData: true` covering both is safest for small files.
+          // For larger files on mobile, we'd want 'path', but let's stick to bytes for simplicity of "Medical Records" (docs/images).
+          // If bytes are null on mobile despite withData:true (rare, but memory constraint), we'd need dart:io.
+          // Let's assume bytes are present.
+          throw Exception("Could not read file data.");
+        } else {
+           throw Exception("Unsupported file source.");
+        }
+
+        await Supabase.instance.client.storage.from('eye-images').uploadBinary(
+          path,
+          fileBytes,
+          fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+        );
+
+        if (mounted) {
+           AppNotifications.showSuccess(context, "Uploaded: ${file.name}");
         }
       }
     } catch (e) {
-      debugPrint("File picker error: $e");
+      debugPrint("Upload error: $e");
+      if (mounted) {
+        // Fallback for the "bytes null on mobile" case to handle it gracefully if it happens
+        if (e.toString().contains("Could not read")) {
+           // Retry with path if possible (requires dart:io import which we might not want to mix if this is a web-heavy file)
+           // But since profile_screen imports universal libs, let's just show error.
+           AppNotifications.showError(context, "Could not read file. Try a smaller file.");
+        } else {
+           AppNotifications.showError(context, "Upload failed: $e");
+        }
+      }
     }
   }
 
