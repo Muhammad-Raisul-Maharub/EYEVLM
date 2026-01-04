@@ -99,9 +99,21 @@ class ScanRepository {
           "language": "en" 
         });
 
+        // Get current session token for Auth
+        final session = _supabase.auth.currentSession;
+        final token = session?.accessToken;
+
+        if (token == null) {
+          debugPrint("⚠️ No Auth Token found. Skipping AI Analysis.");
+          throw Exception("No Auth Token");
+        }
+
         final response = await http.post(
           Uri.parse(backendUrl),
-          headers: {"Content-Type": "application/json"},
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer $token",
+          },
           body: inferencePayload,
         );
 
