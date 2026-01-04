@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/localization/app_strings.dart';
 import '../../core/providers/refresh_provider.dart';
+import '../../core/utils/app_notifications.dart'; // Import
 import 'history_details_dialog.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
@@ -122,12 +123,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       // setState(() { scans.removeWhere((item) => item['id'] == scanId); });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Scan deleted successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppNotifications.showSuccess(context, 'Scan deleted successfully');
       }
 
     } catch (e) {
@@ -137,9 +133,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         setState(() {
           _deletedIds.remove(scanId);
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+        AppNotifications.showError(context, 'Error: $e');
       }
     } finally {
       if (mounted) {
@@ -218,9 +212,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
       if (scans.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No data to export')),
-          );
+          AppNotifications.showInfo(context, 'No data to export');
         }
         return;
       }
@@ -268,25 +260,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       await file.writeAsString(csv.toString());
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Exported ${scans.length} records to:\n${file.path}'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'OK',
-              textColor: Colors.white,
-              onPressed: () {},
-            ),
-          ),
-        );
+        AppNotifications.showSuccess(context, 'Exported ${scans.length} records to:\n${file.path}');
       }
     } catch (e) {
       debugPrint('Export error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
-        );
+        AppNotifications.showError(context, 'Export failed: $e');
       }
     } finally {
       if (mounted) {

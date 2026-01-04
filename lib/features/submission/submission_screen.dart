@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/providers/refresh_provider.dart';
+import '../../core/utils/app_notifications.dart'; // Import
 
 import 'submission_service.dart';
 
@@ -90,7 +91,7 @@ class _SubmissionScreenState extends ConsumerState<SubmissionScreen> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Analysis Complete!')));
+        AppNotifications.showSuccess(context, 'Analysis Complete!');
         
         // Inject URL and Symptoms into result for the Result Screen to use
         final finalResult = Map<String, dynamic>.from(result);
@@ -104,7 +105,7 @@ class _SubmissionScreenState extends ConsumerState<SubmissionScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        AppNotifications.showError(context, 'Error: $e');
       }
     } finally {
       if (mounted) {
