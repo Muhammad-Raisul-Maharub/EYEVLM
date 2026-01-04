@@ -1,6 +1,5 @@
 import 'package:go_router/go_router.dart';
 import 'features/auth/login_screen.dart';
-import 'features/submission/submission_screen.dart';
 import 'features/submission/scan_result_screen.dart';
 import 'features/scan/presentation/scan_flow_screen.dart';
 import 'features/home/home_screen.dart';
