@@ -85,7 +85,6 @@ class AppTheme {
       seedColor: AppColors.lightPrimary,
       brightness: Brightness.light,
       surface: AppColors.lightSurface,
-      background: AppColors.lightBackground,
     ),
   );
 
@@ -145,7 +144,6 @@ class AppTheme {
       seedColor: AppColors.darkPrimary,
       brightness: Brightness.dark,
       surface: AppColors.darkSurface,
-      background: AppColors.darkBackground,
     ),
   );
 }
