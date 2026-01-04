@@ -4,7 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/localization/app_strings.dart';
-import '../../core/widgets/responsive_wrapper.dart'; // Added: Responsive Support
+import '../../core/widgets/responsive_wrapper.dart';
+import '../../core/utils/app_notifications.dart'; // Import
 import 'auth_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -231,9 +232,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           child: TextButton(
             onPressed: () {
                // TODO: Implement actual reset logic
-               ScaffoldMessenger.of(context).showSnackBar(
-                 const SnackBar(content: Text("Reset password feature coming soon.")),
-               );
+               AppNotifications.showInfo(context, "Reset password feature coming soon.");
             }, 
             child: const Text("Forgot Password?", style: TextStyle(color: Colors.grey)),
           ),

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:eyevlm_app/core/widgets/responsive_wrapper.dart';
+import 'package:eyevlm_app/core/utils/app_notifications.dart';
 
 /// Clinical Data Form - Questionnaire for patient data collection.
 /// This form appears after taking a photo with the Smart Camera.
@@ -169,9 +170,7 @@ class _ClinicalDataFormState extends State<ClinicalDataForm> {
     // Validate age
     final age = int.tryParse(_ageController.text.trim());
     if (age == null || age <= 0 || age > 120) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter a valid age (1-120)")),
-      );
+      AppNotifications.showError(context, "Please enter a valid age (1-120)");
       return;
     }
 

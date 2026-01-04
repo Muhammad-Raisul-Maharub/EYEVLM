@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/localization/app_strings.dart';
+import '../../core/utils/app_notifications.dart'; // Import
 
 class SignUpScreen extends ConsumerStatefulWidget {
   const SignUpScreen({super.key});
@@ -21,7 +22,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+      AppNotifications.showError(context, 'Please fill all fields');
       return;
     }
 
@@ -36,17 +37,17 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
       if (mounted) {
         if (response.session != null) {
           // Success, auto login usually happens, router will redirect
-           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account created! Welcome.')));
+           AppNotifications.showSuccess(context, 'Account created! Welcome.');
         } else {
-           // Provide feedback if email confirmation is enabled (not default in standard Supabase setup unless configured)
-           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please check your email for confirmation link if required, or try logging in.')));
+           // Provide feedback if email confirmation is enabled
+           AppNotifications.showInfo(context, 'Please check your email for confirmation link if required, or try logging in.');
            context.go('/login');
         }
       }
     } on AuthException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+      if (mounted) AppNotifications.showError(context, e.message);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      if (mounted) AppNotifications.showError(context, 'Error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

@@ -4,6 +4,7 @@ import 'package:eyevlm_app/features/scan/presentation/smart_camera_screen.dart';
 import 'package:eyevlm_app/features/scan/presentation/clinical_data_form.dart';
 import 'package:eyevlm_app/features/scan/data/scan_repository.dart';
 import 'package:eyevlm_app/core/theme/app_tokens.dart';
+import 'package:eyevlm_app/core/utils/app_notifications.dart';
 
 /// A complete scan flow widget that automatically links:
 /// Smart Camera -> Image Cropper -> Clinical Form -> Database Upload
@@ -67,12 +68,7 @@ class ScanFlowScreen extends StatelessWidget {
         Navigator.of(context).pop(); // Close loading dialog
         
         // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Scan uploaded successfully!"),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppNotifications.showSuccess(context, "Scan uploaded successfully!");
 
         // Navigate back to home
         Navigator.of(context).popUntil((route) => route.isFirst);
@@ -81,12 +77,7 @@ class ScanFlowScreen extends StatelessWidget {
       if (context.mounted) {
         Navigator.of(context).pop(); // Close loading dialog
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Error: $e"),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppNotifications.showError(context, "Error: $e");
       }
     }
   }

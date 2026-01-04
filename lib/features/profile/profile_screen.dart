@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:eyevlm_app/core/theme/app_tokens.dart';
 import 'package:eyevlm_app/features/profile/widgets/timeline_tile.dart';
+import 'package:eyevlm_app/core/utils/app_notifications.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -27,13 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (result != null) {
         // TODO: Implement actual upload logic to Supabase Storage
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("Selected: ${result.files.single.name}"),
-              backgroundColor: Colors.teal,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+           AppNotifications.showSuccess(context, "Selected: ${result.files.single.name}");
         }
       }
     } catch (e) {
@@ -261,9 +256,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showComingSoon(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("$feature coming soon!"), duration: const Duration(seconds: 1)),
-    );
+    AppNotifications.showInfo(context, "$feature coming soon!");
   }
 }
 
