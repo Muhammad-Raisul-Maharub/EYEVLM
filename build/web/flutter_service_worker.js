@@ -28,7 +28,7 @@ const RESOURCES = {".vercel/project.json": "2a66604410b73a6a6651c235af0251af",
 "canvaskit/skwasm_heavy.wasm": "b0be7910760d205ea4e011458df6ee01",
 "favicon.png": "1e50ea2a6ac257e3af191a05d44004f1",
 "flutter.js": "24bc71911b75b5f8135c949e27a2984e",
-"flutter_bootstrap.js": "a24ce8a3992bc9a00629e4b8cda0b212",
+"flutter_bootstrap.js": "8187d73369fa0775d86420d222088df6",
 "icons/Icon-192.png": "0d7295cb0ccddfaec12edb26c40a66d3",
 "icons/Icon-512.png": "b8662d6c3d1f3fe18ea81bf314ebafa0",
 "icons/Icon-maskable-192.png": "0d7295cb0ccddfaec12edb26c40a66d3",
@@ -37,6 +37,7 @@ const RESOURCES = {".vercel/project.json": "2a66604410b73a6a6651c235af0251af",
 "/": "02ac45b3a4dca3063079460a01aebe3a",
 "main.dart.js": "ff933770948ec1117df072485df0b8ae",
 "manifest.json": "0529e277d5e64cb87c1d20b3d1c66e84",
+"vercel.json": "16954adafdbea58b04cfe4e382f44d60",
 "version.json": "d01e4ffbc143fa4964fd11f926cbb92c"};
 // The application shell files that are downloaded before a service worker can
 // start.
