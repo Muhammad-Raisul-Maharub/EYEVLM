@@ -51,7 +51,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      extendBodyBehindAppBar: true, // Optional polish for the curved header if needed, but just removing color is key
       body: SingleChildScrollView(
         child: Column(
           children: [
