@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 import 'features/auth/login_screen.dart';
 import 'features/submission/submission_screen.dart';
 import 'features/submission/scan_result_screen.dart';
+import 'features/scan/presentation/scan_flow_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/history/history_screen.dart';
 import 'features/profile/profile_screen.dart';
@@ -49,7 +50,7 @@ final router = GoRouter(
               routes: [
                 GoRoute(
                   path: 'scan',
-                  builder: (context, state) => const SubmissionScreen(),
+                  builder: (context, state) => const ScanFlowScreen(),
                 ),
                 GoRoute(
                   path: 'result',

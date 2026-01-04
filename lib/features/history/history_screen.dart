@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/localization/app_strings.dart';
 import '../../core/providers/refresh_provider.dart';
@@ -19,7 +23,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   // Using a Stream ensures the list updates automatically when new scans are added
   // or items are deleted. This is crucial for tabs (IndexedStack).
   late Stream<List<Map<String, dynamic>>> _scansStream;
-  bool _isDeleting = false; 
+  bool _isDeleting = false;
+  bool _isExporting = false;
   // Keep track of auth subscription to cancel it
   late final StreamSubscription<AuthState> _authSubscription;
   final Set<int> _deletedIds = {}; // Local set for optimistic deletion
@@ -194,6 +199,102 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     );
   }
 
+  /// Exports all scans to a CSV file for thesis data analysis
+  Future<void> _exportToCSV() async {
+    setState(() => _isExporting = true);
+
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) throw Exception('User not logged in');
+
+      // Fetch all scans
+      final response = await Supabase.instance.client
+          .from('scans')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+
+      final scans = List<Map<String, dynamic>>.from(response);
+
+      if (scans.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No data to export')),
+          );
+        }
+        return;
+      }
+
+      // Build CSV content
+      final StringBuffer csv = StringBuffer();
+      
+      // Header row
+      csv.writeln('ID,Created At,Image URL,Prediction,Confidence,Patient Age,Patient Gender,Suspected Disease,Symptoms,Notes');
+
+      // Data rows
+      for (final scan in scans) {
+        final id = scan['id'] ?? '';
+        final createdAt = scan['created_at'] ?? '';
+        final imageUrl = scan['image_url'] ?? '';
+        final prediction = scan['prediction'] ?? '';
+        final confidence = scan['confidence'] ?? 0;
+        final patientAge = scan['patient_age'] ?? '';
+        final patientGender = scan['patient_gender'] ?? '';
+        final suspectedDisease = scan['suspected_disease'] ?? '';
+        
+        // Extract clinical_data JSON
+        String symptoms = '';
+        String notes = '';
+        if (scan['clinical_data'] != null) {
+          final clinicalData = scan['clinical_data'] as Map<String, dynamic>;
+          if (clinicalData['checked_symptoms'] != null) {
+            symptoms = (clinicalData['checked_symptoms'] as List).join('; ');
+          }
+          notes = clinicalData['additional_notes'] ?? '';
+        }
+
+        // Escape quotes in fields
+        final escapedImageUrl = '"${imageUrl.replaceAll('"', '""')}"';
+        final escapedSymptoms = '"${symptoms.replaceAll('"', '""')}"';
+        final escapedNotes = '"${notes.replaceAll('"', '""')}"';
+
+        csv.writeln('$id,$createdAt,$escapedImageUrl,$prediction,$confidence,$patientAge,$patientGender,$suspectedDisease,$escapedSymptoms,$escapedNotes');
+      }
+
+      // Save to file
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final file = File('${directory.path}/eyevlm_export_$timestamp.csv');
+      await file.writeAsString(csv.toString());
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${scans.length} records to:\n${file.path}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Export error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isExporting = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Listen for manual refresh triggers (e.g. from SubmissionScreen)
@@ -210,7 +311,19 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(AppStrings.tr(ref, 'titleHistory'))),
+      appBar: AppBar(
+        title: Text(AppStrings.tr(ref, 'titleHistory')),
+        actions: [
+          if (!kIsWeb) // CSV export only on mobile (file access)
+            IconButton(
+              icon: _isExporting 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.download),
+              tooltip: 'Export to CSV',
+              onPressed: _isExporting ? null : _exportToCSV,
+            ),
+        ],
+      ),
       body: Stack(
         children: [
           StreamBuilder<List<Map<String, dynamic>>>(
