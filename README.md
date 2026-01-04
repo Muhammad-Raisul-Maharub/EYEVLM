@@ -15,7 +15,7 @@ EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the 
 
 | Platform | Status | Action |
 | :--- | :--- | :--- |
-| **Android App** | ✅ **v1.0 Stable** | [Download APK](https://drive.google.com/file/d/1hwTOH1jhE8sWYBv5xYmM31JhQx5eoaYQ/view?usp=sharing) |
+| **Android App** | ✅ **v1.0 Stable** | [Download APK](https://drive.google.com/file/d/1zBmf-uGQnltpZG5DyEngS1VxJOaGC2kU/view?usp=sharing) |
 | **Web App** | ✅ **Live** | [Launch Web App](https://eyevlm-web.vercel.app) |
 
 ---

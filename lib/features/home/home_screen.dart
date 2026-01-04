@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -71,7 +73,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _downloadApk() async {
-    final Uri url = Uri.parse('https://drive.google.com/file/d/1hwTOH1jhE8sWYBv5xYmM31JhQx5eoaYQ/view?usp=sharing');
+    final Uri url = Uri.parse('https://drive.google.com/file/d/1zBmf-uGQnltpZG5DyEngS1VxJOaGC2kU/view?usp=sharing');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -109,7 +111,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
         ),
         actions: [
-          if (kIsWeb)
+          // Show download button on web (and iOS if not web)
+          // Using ternary to avoid dart:io issues on web
+          if (kIsWeb || (!kIsWeb && Platform.isIOS))
             IconButton(
               icon: const Icon(Icons.android, color: Color(0xFF3DDC84)),
               tooltip: 'Download Android App',
