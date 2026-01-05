@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 from typing import Optional, List
+from datetime import datetime
 from auth import verify_jwt, require_admin
 
 app = FastAPI(title="EyeVLM Inference Backend")
@@ -26,8 +27,21 @@ class InferenceResult(BaseModel):
     explanation_text: str
 
 @app.get("/")
-def health_check():
+def root():
+    """Root endpoint - lightweight for basic checks"""
     return {"status": "ok", "message": "EyeVLM Backend Running"}
+
+@app.get("/health")
+def health_check():
+    """
+    Dedicated health check endpoint for UptimeRobot monitoring.
+    Returns instantly with timestamp for debugging.
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "EyeVLM Inference Backend"
+    }
 
 @app.post("/infer", response_model=InferenceResult)
 def run_inference(
