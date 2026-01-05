@@ -31,18 +31,28 @@ class ScanRepository {
 
       debugPrint('Uploading image to eye-images bucket: $fileName');
 
+      // Determine MIME type from extension
+      String contentType = 'image/jpeg'; // Default
+      if (fileExt.toLowerCase() == 'png') {
+        contentType = 'image/png';
+      } else if (fileExt.toLowerCase() == 'gif') {
+        contentType = 'image/gif';
+      } else if (fileExt.toLowerCase() == 'webp') {
+        contentType = 'image/webp';
+      }
+
       if (kIsWeb) {
            if (imageBytes == null) throw Exception("Web upload requires imageBytes to be passed");
            await _supabase.storage.from('eye-images').uploadBinary(
              fileName,
              imageBytes,
-             fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+             fileOptions: FileOptions(cacheControl: '3600', upsert: false, contentType: contentType),
            );
       } else {
            await _supabase.storage.from('eye-images').upload(
              fileName,
              File(imagePath),
-             fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+             fileOptions: FileOptions(cacheControl: '3600', upsert: false, contentType: contentType),
            );
       }
 
@@ -194,20 +204,69 @@ class ScanRepository {
     return response;
   }
 
-  /// Deletes a scan record and its associated image
+  /// Deletes a scan record and ALL associated files (image + attachments)
   Future<void> deleteScan(String scanId, String imageUrl) async {
     final user = _supabase.auth.currentUser;
     if (user == null) throw Exception("User not logged in");
 
-    // Extract file path from URL
-    final uri = Uri.parse(imageUrl);
-    final pathSegments = uri.pathSegments;
-    final storagePath = pathSegments.sublist(pathSegments.indexOf('eye-images') + 1).join('/');
+    try {
+      // Extract the session folder path from URL
+      // URL format: .../eye-images/scans/{sessionId}/eye_image.ext
+      final uri = Uri.parse(imageUrl);
+      final pathSegments = uri.pathSegments;
+      final eyeImagesIndex = pathSegments.indexOf('eye-images');
+      
+      if (eyeImagesIndex == -1) {
+        debugPrint("Could not parse image URL for deletion: $imageUrl");
+        // Fallback: just delete the database record
+        await _supabase.from('scans').delete().eq('id', scanId);
+        return;
+      }
 
-    // Delete from storage
-    await _supabase.storage.from('eye-images').remove([storagePath]);
+      // Get the folder path (e.g., scans/{sessionId})
+      final storagePath = pathSegments.sublist(eyeImagesIndex + 1).join('/');
+      final folderPath = storagePath.substring(0, storagePath.lastIndexOf('/'));
+      
+      debugPrint("Deleting all files in folder: $folderPath");
 
-    // Delete from database
-    await _supabase.from('scans').delete().eq('id', scanId);
+      // List all files in the session folder
+      final List<FileObject> files = await _supabase.storage
+          .from('eye-images')
+          .list(path: folderPath);
+
+      // Delete main folder files (eye_image)
+      if (files.isNotEmpty) {
+        final filesToDelete = files.map((f) => '$folderPath/${f.name}').toList();
+        await _supabase.storage.from('eye-images').remove(filesToDelete);
+        debugPrint("Deleted ${filesToDelete.length} files from $folderPath");
+      }
+
+      // Also check for attachments subfolder
+      try {
+        final List<FileObject> attachments = await _supabase.storage
+            .from('eye-images')
+            .list(path: '$folderPath/attachments');
+        
+        if (attachments.isNotEmpty) {
+          final attachmentsToDelete = attachments
+              .map((f) => '$folderPath/attachments/${f.name}')
+              .toList();
+          await _supabase.storage.from('eye-images').remove(attachmentsToDelete);
+          debugPrint("Deleted ${attachmentsToDelete.length} attachments");
+        }
+      } catch (e) {
+        // Attachments folder may not exist, that's fine
+        debugPrint("No attachments folder or error: $e");
+      }
+
+      // Delete from database
+      await _supabase.from('scans').delete().eq('id', scanId);
+      debugPrint("Scan $scanId deleted successfully with all files");
+    } catch (e) {
+      debugPrint("Error during scan deletion: $e");
+      // Still try to delete the database record even if storage fails
+      await _supabase.from('scans').delete().eq('id', scanId);
+      rethrow;
+    }
   }
 }

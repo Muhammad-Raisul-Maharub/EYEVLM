@@ -23,7 +23,7 @@
 
   <!-- Fix CSP Issues: Allow unsafe-eval/inline for Flutter Web & External Scripts -->
   <meta http-equiv="Content-Security-Policy"
-    content="default-src *; script-src 'self' 'unsafe-inline' 'unsafe-eval' *; style-src 'self' 'unsafe-inline' *; img-src 'self' data: blob: *; font-src 'self' data: *; connect-src *;">
+    content="default-src * blob: data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' * blob:; style-src 'self' 'unsafe-inline' *; img-src 'self' data: blob: *; font-src 'self' data: *; connect-src * blob: data:;">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">

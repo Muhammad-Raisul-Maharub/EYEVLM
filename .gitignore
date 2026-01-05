@@ -12,6 +12,12 @@
 .swiftpm/
 migrate_working_dir/
 
+# APK files (too large for version control)
+*.apk
+
+# Analysis logs
+analysis_*.txt
+
 # IntelliJ related
 *.iml
 *.ipr

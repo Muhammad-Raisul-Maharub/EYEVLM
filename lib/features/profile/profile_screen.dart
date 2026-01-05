@@ -229,11 +229,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildFooter() {
     return Column(
       children: [
-        Text(
-          "EyeVLM Research v1.0.0",
-          style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[400]),
-        ),
-        const SizedBox(height: 4),
         // Designed & Developed by
         Text(
           "Designed & Developed by",
