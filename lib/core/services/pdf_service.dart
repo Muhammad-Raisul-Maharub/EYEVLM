@@ -4,6 +4,9 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+// Conditional import for web
+import 'pdf_download_stub.dart'
+    if (dart.library.html) 'pdf_download_web.dart' as pdf_download;
 
 /// Service to generate PDF reports for EyeVLM scans.
 class PdfService {
@@ -145,11 +148,18 @@ class PdfService {
     );
   }
 
-  /// Convenience method to generate and share the report directly
-  /// Convenience method to generate and share the report directly.
+  /// Downloads PDF - works on both web and native platforms
+  Future<void> downloadPdf(Uint8List bytes, String filename) async {
+    if (kIsWeb) {
+      pdf_download.downloadPdfWeb(bytes, filename);
+    } else {
+      await Printing.sharePdf(bytes: bytes, filename: filename);
+    }
+  }
+
+  /// Convenience method to generate and download the report.
   /// Fetches the scan image from Supabase Storage if available.
   Future<void> generateAndShareReport(Map<String, dynamic> scan) async {
-    // Let errors propagate to be handled by the UI
     Uint8List? imageBytes;
     
     // Attempt to fetch image if URL exists
@@ -162,18 +172,16 @@ class PdfService {
         
         if (bucketIndex != -1) {
              final storagePath = segments.sublist(bucketIndex + 1).join('/');
-             // Requires supabase_flutter import
              final response = await Supabase.instance.client.storage.from('eye-images').download(storagePath);
              imageBytes = response;
         }
       } catch (e) {
         debugPrint("⚠️ PdfService: Could not fetch image for PDF: $e");
-        // Continue without image
       }
     }
     
     final bytes = await generateScanReport(scanData: scan, scanImageBytes: imageBytes);
     final name = 'EyeVLM_Report_${(scan['id'].toString().length > 8) ? scan['id'].toString().substring(0, 8) : scan['id']}.pdf';
-    await Printing.sharePdf(bytes: bytes, filename: name);
+    await downloadPdf(bytes, name);
   }
 }

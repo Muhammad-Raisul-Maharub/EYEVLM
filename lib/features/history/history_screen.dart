@@ -65,7 +65,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               .from('scans')
               .stream(primaryKey: ['id'])
               .eq('user_id', userId)
-              .order('created_at', ascending: true);
+              .order('created_at', ascending: false);
         });
       }
     } else {
@@ -77,7 +77,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
   }
 
-  // Robust Delete Function (Exact implementation from user request)
+  // Robust Delete Function - Deletes image, attachments, and database record
   Future<void> deleteScan(int scanId, String imageUrl) async {
     // Optimistic Update: Remove from UI immediately
     setState(() {
@@ -91,47 +91,55 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       // --- 1. Robust Path Extraction ---
       final uri = Uri.parse(imageUrl);
       final segments = uri.pathSegments;
-      // We parse the URL to find the path *after* the bucket name ('eye-images')
       final bucketIndex = segments.indexOf('eye-images');
 
       if (bucketIndex == -1) {
         throw Exception("Invalid URL: 'eye-images' bucket not found.");
       }
 
-      // Join all segments after the bucket name to get the full storage path
-      // Example: converts ["...","eye-images", "folder", "scan.jpg"] -> "folder/scan.jpg"
+      // Get the full file path (e.g., scans/userId_timestamp/eye_image.jpg)
       final filePath = segments.sublist(bucketIndex + 1).join('/');
+      // Get the folder path (e.g., scans/userId_timestamp)
+      final folderPath = filePath.substring(0, filePath.lastIndexOf('/'));
 
-      debugPrint("Targeting file for deletion: $filePath"); // Debug print
+      debugPrint("🗑️ Deleting scan folder: $folderPath");
 
-      // --- 2. Delete from Storage ---
-      final List<FileObject> result = await supabase
-          .storage
-          .from('eye-images')
-          .remove([filePath]);
-
-      // Check if storage delete actually happened
-      if (result.isEmpty) {
-        debugPrint("⚠️ Warning: Storage file not found or policy blocked deletion.");
-      } else {
-        debugPrint("✅ Storage file deleted successfully.");
+      // --- 2. Delete main image file ---
+      try {
+        await supabase.storage.from('eye-images').remove([filePath]);
+        debugPrint("✅ Main image deleted: $filePath");
+      } catch (e) {
+        debugPrint("⚠️ Could not delete main image: $e");
       }
 
-      // --- 3. Delete from Database ---
-      await supabase.from('scans').delete().eq('id', scanId);
+      // --- 3. Delete attachments subfolder ---
+      try {
+        final attachmentsPath = '$folderPath/attachments';
+        final List<FileObject> attachments = await supabase.storage
+            .from('eye-images')
+            .list(path: attachmentsPath);
+        
+        if (attachments.isNotEmpty) {
+          final attachmentPaths = attachments
+              .map((f) => '$attachmentsPath/${f.name}')
+              .toList();
+          await supabase.storage.from('eye-images').remove(attachmentPaths);
+          debugPrint("✅ Deleted ${attachmentPaths.length} attachments");
+        }
+      } catch (e) {
+        debugPrint("📎 No attachments folder or error: $e");
+      }
 
-      // --- 4. Update UI ---
-      // We are using StreamBuilder, so the UI updates automatically.
-      // If we were using a manual List, we would use:
-      // setState(() { scans.removeWhere((item) => item['id'] == scanId); });
+      // --- 4. Delete from Database ---
+      await supabase.from('scans').delete().eq('id', scanId);
+      debugPrint("✅ Database record $scanId deleted");
 
       if (mounted) {
-        AppNotifications.showSuccess(context, 'Scan deleted successfully');
+        AppNotifications.showSuccess(context, 'Scan and attachments deleted');
       }
 
     } catch (e) {
-      debugPrint("Error during deletion: $e");
-      // Revert Optimistic Update
+      debugPrint("❌ Error during deletion: $e");
       if (mounted) {
         setState(() {
           _deletedIds.remove(scanId);

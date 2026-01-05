@@ -3,20 +3,22 @@
 [![Flutter](https://img.shields.io/badge/Flutter-3.0%2B-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Supabase](https://img.shields.io/badge/Supabase-Auth%20%26%20DB-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
 [![Vercel](https://img.shields.io/badge/Vercel-Deployed-000000?logo=vercel&logoColor=white)](https://vercel.com)
+[![Render](https://img.shields.io/badge/Render-Backend-46E3B7?logo=render&logoColor=white)](https://render.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Thesis Project:** Computer-Aided Diagnosis system for early detection of ocular diseases using Vision-Language Models.
 
-EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the early detection of eye diseases using advanced AI. It captures eye images via Smart Camera with ML Kit face detection, collects clinical data, and stores everything securely in Supabase.
+EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the early detection of eye diseases using advanced AI. It captures eye images via Smart Camera with ML Kit face detection, collects clinical data, and provides AI-powered analysis through a FastAPI backend.
 
 ---
 
 ## 📥 **Try It Now**
 
-| Platform | Status | Action |
+| Platform | Version | Action |
 | :--- | :--- | :--- |
-| **Android App** | ✅ **v1.0 Stable** | [Download APK](https://drive.google.com/file/d/1zBmf-uGQnltpZG5DyEngS1VxJOaGC2kU/view?usp=sharing) |
-| **Web App** | ✅ **Live** | [Launch Web App](https://eyevlm-web.vercel.app) |
+| **Web App** | ✅ **Live** | [Launch Web App](https://eyevlm-app.vercel.app) |
+| **Android App** | ✅ **v1.1** | [Download APK](https://drive.google.com/file/d/1eaExq4f8d7wmSyTdqM-86el766NOwlCo/view?usp=sharing) |
+| **Backend API** | ✅ **Live** | [API Status](https://eyevlm-backend.onrender.com) |
 
 ---
 
@@ -26,16 +28,24 @@ EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the 
 - **Real-time Face Detection** using Google ML Kit
 - **Eye Open Probability** checking (auto-captures when eyes are open)
 - **Auto-capture** after detecting stable, valid frames
-- **Manual capture** fallback button
+- **Free-form Image Cropping** for precise selection
+
+### AI-Powered Analysis
+- **Vision-Language Model** for eye disease detection
+- **Multi-class Prediction** with confidence scores
+- **Explainable AI** providing reasoning for predictions
+- **JWT-authenticated** backend requests
 
 ### Clinical Data Collection
 - **Patient Demographics** (age, gender)
 - **Disease Category** dropdown (Cataract, Glaucoma, Diabetic Retinopathy, etc.)
 - **Symptom Checkboxes** (Blurred Vision, Eye Pain, Redness, etc.)
-- **Additional Notes** text field
+- **File Attachments** (medical records, reports)
 - **JSONB Storage** for flexible data analysis
 
 ### Data Management
+- **Session-based Storage** (`scans/{sessionId}/`)
+- **Complete Delete** (removes all files + database record)
 - **Cloud History** with instant deletion (optimistic UI)
 - **CSV Export** for thesis data analysis
 - **Secure Storage** via Supabase with Row Level Security
@@ -62,8 +72,10 @@ EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the 
 ### Backend
 | Technology | Purpose |
 |------------|---------|
+| FastAPI (Python) | AI Inference API |
 | Supabase | Auth, Database, Storage |
 | PostgreSQL | Data storage with JSONB |
+| Render | Backend hosting |
 | Vercel | Web hosting |
 
 ---
@@ -80,12 +92,17 @@ lib/
 │   ├── providers/               # Riverpod providers
 │   └── utils/                   # Camera utilities
 └── features/
-    ├── scan/                    # Smart Camera + Clinical Form
+    ├── scan/                    # Smart Camera + Clinical Form + Repository
     ├── history/                 # Scan history + CSV export
     ├── home/                    # Dashboard
     ├── auth/                    # Login/Signup
     ├── profile/                 # Settings, Privacy, Ethics
     └── onboarding/              # Welcome screens
+
+backend/
+├── main.py                      # FastAPI server
+├── auth.py                      # JWT verification
+└── requirements.txt             # Python dependencies
 ```
 
 ---
@@ -94,6 +111,7 @@ lib/
 
 ### Prerequisites
 - Flutter SDK 3.0+
+- Python 3.9+ (for backend)
 - Supabase Account
 
 ### Setup
@@ -102,12 +120,19 @@ lib/
 git clone https://github.com/Muhammad-Raisul-Maharub/EYEVLM.git
 cd EYEVLM
 
-# Install dependencies
+# Install Flutter dependencies
 flutter pub get
 
-# Run
+# Run Frontend
 flutter run -d chrome    # Web
 flutter run              # Mobile
+```
+
+### Backend Setup
+```bash
+cd backend
+pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8080
 ```
 
 ### Build
@@ -126,15 +151,42 @@ flutter build apk --release
 ### `scans` table
 | Column | Type | Description |
 |--------|------|-------------|
-| id | uuid | Primary key |
+| id | int8 | Primary key |
 | user_id | uuid | User reference |
+| created_at | timestamptz | Scan timestamp |
 | image_url | text | Supabase storage URL |
 | prediction | text | AI prediction result |
-| confidence | float | Confidence score |
-| patient_age | int | Patient age |
+| confidence | float8 | Confidence score |
+| symptoms | text | Disease category |
+| clinical_data | jsonb | Symptoms, notes, attachments, AI explanation |
+| patient_age | int4 | Patient age |
 | patient_gender | text | Male/Female/Other |
 | suspected_disease | text | Disease category |
-| clinical_data | jsonb | Symptoms + notes JSON |
+
+### Storage Structure
+```
+eye-images/
+└── scans/
+    └── {userId}_{timestamp}/
+        ├── eye_image.jpg
+        └── attachments/
+            └── report.pdf
+```
+
+---
+
+## 🌐 **Deployment**
+
+### Web (Vercel)
+```bash
+flutter build web --release
+cd build/web
+vercel deploy --prod
+```
+
+### Backend (Render)
+Deploy from GitHub with environment variable:
+- `SUPABASE_JWT_SECRET` - Your Supabase JWT secret
 
 ---
 

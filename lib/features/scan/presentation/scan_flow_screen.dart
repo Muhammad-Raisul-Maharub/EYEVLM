@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:go_router/go_router.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:eyevlm_app/features/scan/presentation/smart_camera_screen.dart';
 import 'package:eyevlm_app/features/scan/presentation/clinical_data_form.dart';
@@ -111,17 +113,19 @@ class ScanFlowScreen extends StatelessWidget {
             _buildOptionCard(
               context,
               icon: Icons.camera_alt,
-              title: "Scan with Camera",
-              subtitle: "Use AI Smart Camera",
-              color: Colors.teal,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => SmartCameraScreen(
-                    onImageCaptured: (path) => _handleImageCaptured(context, path),
+              title: "Live Camera",
+              subtitle: "Web Camera Test v2",
+              color: Colors.purple,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SmartCameraScreen(
+                      onImageCaptured: (path) => _handleImageCaptured(context, path),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
             const SizedBox(height: 20),
             _buildOptionCard(
@@ -177,10 +181,10 @@ class ScanFlowScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _pickAndCropImage(BuildContext context) async {
+  Future<void> _pickAndCropImage(BuildContext context, {ImageSource source = ImageSource.gallery}) async {
     try {
       final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      final XFile? image = await picker.pickImage(source: source);
       
       if (!context.mounted) return;
 
@@ -204,26 +208,58 @@ class ScanFlowScreen extends StatelessWidget {
              icon: const Icon(Icons.picture_as_pdf),
              label: const Text("Download Report"),
              onPressed: () async {
-                final pdfBytes = await PdfService().generateScanReport(
-                   scanData: {
-                      'id': 'NEW-${DateTime.now().millisecondsSinceEpoch}',
-                      'created_at': DateTime.now().toIso8601String(),
-                      'prediction': 'Pending',
-                      'confidence': 0.0,
-                      ...formData,
-                      'clinical_data': {
-                          ...formData['clinical_data'],
-                          'attachments': attachments?.map((f) => {'name': f.name, 'url': 'Attached'}).toList() ?? []
-                      }
-                   },
-                   scanImageBytes: imageBytes ?? (await File(imagePath).readAsBytes()),
-                );
-                await Printing.sharePdf(bytes: pdfBytes, filename: 'EyeVLM_Report_New.pdf');
+                try {
+                  final pdfService = PdfService();
+                  
+                  // Extract clinical_data safely
+                  final clinicalDataRaw = formData['clinical_data'];
+                  final clinicalData = clinicalDataRaw is Map 
+                      ? Map<String, dynamic>.from(clinicalDataRaw)
+                      : <String, dynamic>{};
+                  
+                  // Add attachments to clinical_data
+                  clinicalData['attachments'] = attachments?.map((f) => {'name': f.name, 'url': 'Attached'}).toList() ?? [];
+                  
+                  // Build scanData explicitly to avoid spread operator type issues
+                  final scanData = <String, dynamic>{
+                    'id': 'NEW-${DateTime.now().millisecondsSinceEpoch}',
+                    'created_at': DateTime.now().toIso8601String(),
+                    'prediction': 'Pending',
+                    'confidence': 0.0,
+                    'patient_age': formData['patient_age'],
+                    'patient_gender': formData['patient_gender'],
+                    'suspected_disease': formData['suspected_disease'],
+                    'clinical_data': clinicalData,
+                  };
+                  
+                  final pdfBytes = await pdfService.generateScanReport(
+                     scanData: scanData,
+                     scanImageBytes: imageBytes ?? (await File(imagePath).readAsBytes()),
+                  );
+                  await pdfService.downloadPdf(pdfBytes, 'EyeVLM_Report_New.pdf');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Report downloaded!'), backgroundColor: Colors.green),
+                    );
+                  }
+                } catch (e) {
+                  debugPrint('PDF Download Error: $e');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
              },
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-            child: const Text("Done"),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.history),
+            label: const Text("View in History"),
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              // Navigate to history tab using GoRouter
+              context.go('/history');
+            },
           ),
         ],
       ),
