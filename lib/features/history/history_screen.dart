@@ -29,9 +29,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   late Stream<List<Map<String, dynamic>>> _scansStream;
   bool _isDeleting = false;
   bool _isExporting = false;
+  bool _isDownloading = false; // For download overlay
   // Keep track of auth subscription to cancel it
   late final StreamSubscription<AuthState> _authSubscription;
   final Set<int> _deletedIds = {}; // Local set for optimistic deletion
+  
+  // Selection mode state
+  bool _isSelectionMode = false;
+  final Set<int> _selectedScanIds = {};
 
   @override
   void initState() {
@@ -131,7 +136,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       }
 
       // --- 4. Delete from Database ---
-      await supabase.from('scans').delete().eq('id', scanId);
+      await supabase.from('scans').delete().eq('id', scanId).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException("Database deletion timed out"),
+      );
       debugPrint("✅ Database record $scanId deleted");
 
       if (mounted) {
@@ -302,29 +310,61 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppStrings.tr(ref, 'titleHistory')),
+        title: _isSelectionMode 
+            ? Text('${_selectedScanIds.length} Selected')
+            : Text(AppStrings.tr(ref, 'titleHistory')),
+        leading: _isSelectionMode 
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => setState(() {
+                  _isSelectionMode = false;
+                  _selectedScanIds.clear();
+                }),
+              )
+            : null,
         actions: [
-          if (!kIsWeb) // CSV export only on mobile (file access)
+          if (_isSelectionMode) ...[
             IconButton(
-              icon: _isExporting 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.download),
-              tooltip: 'Export to CSV',
-              onPressed: _isExporting ? null : _exportToCSV,
+              icon: const Icon(Icons.download),
+              tooltip: 'Download Selected Reports',
+              onPressed: _selectedScanIds.isEmpty ? null : _downloadSelectedReports,
             ),
+          ] else ...[
+            if (!kIsWeb) // CSV export only on mobile (file access)
+              IconButton(
+                icon: _isExporting 
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.download),
+                tooltip: 'Export to CSV',
+                onPressed: _isExporting ? null : _exportToCSV,
+              ),
+          ],
         ],
       ),
       body: Stack(
         children: [
-          StreamBuilder<List<Map<String, dynamic>>>(
-            stream: _scansStream,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                 return const Center(child: CircularProgressIndicator());
-              }
+          RefreshIndicator(
+            onRefresh: () async {
+              _initStream();
+              await Future.delayed(const Duration(seconds: 1));
+            },
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _scansStream,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('Error: ${snapshot.error}'),
+                        ElevatedButton(onPressed: _initStream, child: const Text("Retry")),
+                      ],
+                    ),
+                  );
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                   return const Center(child: CircularProgressIndicator());
+                }
               
               final allScans = snapshot.data ?? [];
               // Optimistically filter out items marked for deletion
@@ -354,27 +394,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       ? (scan['confidence'] * 100).toInt() 
                       : 0;
 
-                  return Dismissible(
+                  // Removed Dismissible wrapper (delete only from detail view)
+                  return Container(
                     key: Key(scan['id'].toString()),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      child: const Icon(Icons.delete, color: Colors.white, size: 28),
-                    ),
-                    confirmDismiss: (direction) async {
-                       showDeleteConfirmation(
-                          scan['id'], 
-                          scan['image_url'], 
-                          scan['prediction'] ?? 'Unknown',
-                        );
-                        return false;
-                    },
                     child: Container(
                       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
@@ -392,17 +414,59 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         color: Colors.transparent,
                         child: InkWell(
                           borderRadius: BorderRadius.circular(16),
+                          onLongPress: () {
+                            // Enter selection mode on long press
+                            setState(() {
+                              _isSelectionMode = true;
+                              _selectedScanIds.add(scan['id']);
+                            });
+                          },
                           onTap: () {
-                            showHistoryDetails(
-                              context, 
-                              scan, 
-                              (id, url) => showDeleteConfirmation(id, url, scan['prediction'] ?? 'Unknown'),
-                            );
+                            if (_isSelectionMode) {
+                              // Toggle selection
+                              setState(() {
+                                if (_selectedScanIds.contains(scan['id'])) {
+                                  _selectedScanIds.remove(scan['id']);
+                                  if (_selectedScanIds.isEmpty) {
+                                    _isSelectionMode = false;
+                                  }
+                                } else {
+                                  _selectedScanIds.add(scan['id']);
+                                }
+                              });
+                            } else {
+                              showHistoryDetails(
+                                context, 
+                                scan, 
+                                (id, url) => showDeleteConfirmation(id, url, scan['prediction'] ?? 'Unknown'),
+                              );
+                            }
                           },
                           child: Padding(
                             padding: const EdgeInsets.all(12.0),
                             child: Row(
                               children: [
+                                // Selection checkbox
+                                if (_isSelectionMode)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 12),
+                                    child: Checkbox(
+                                      value: _selectedScanIds.contains(scan['id']),
+                                      onChanged: (val) {
+                                        setState(() {
+                                          if (val == true) {
+                                            _selectedScanIds.add(scan['id']);
+                                          } else {
+                                            _selectedScanIds.remove(scan['id']);
+                                            if (_selectedScanIds.isEmpty) {
+                                              _isSelectionMode = false;
+                                            }
+                                          }
+                                        });
+                                      },
+                                      activeColor: Colors.teal,
+                                    ),
+                                  ),
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child: Image.network(
@@ -486,14 +550,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                                 ],
                               ),
                             ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                  onPressed: () => showDeleteConfirmation(
-                                    scan['id'], 
-                                    scan['image_url'], 
-                                    scan['prediction'] ?? 'Unknown',
-                                  ),
-                                ),
+                                // Delete button removed from list - available in detail view only
+                                const Icon(Icons.chevron_right, color: Colors.grey),
                               ],
                             ),
                           ),
@@ -505,8 +563,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               );
             },
           ),
+        ),
           
-          if (_isDeleting)
+          if (_isDeleting || _isDownloading)
             Container(
               color: Colors.black.withAlpha(77),
               child: const Center(
@@ -519,14 +578,69 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   Future<void> _downloadPdf(Map<String, dynamic> scan) async {
+    if (_isDownloading) return;
+    setState(() => _isDownloading = true);
     try {
       if (!mounted) return;
       AppNotifications.showInfo(context, "Generating Report...");
       
-      await PdfService().generateAndShareReport(scan);
+      // Add timeout to prevent sticking
+      await PdfService().generateAndShareReport(scan).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw TimeoutException('PDF generation timed out'),
+      );
       
+      if (mounted) AppNotifications.showSuccess(context, "Report downloaded!");
     } catch (e) {
       if (mounted) AppNotifications.showError(context, "Failed to generate PDF: $e");
+    } finally {
+      if (mounted) setState(() => _isDownloading = false);
+    }
+  }
+
+  /// Download reports for selected scans only
+  Future<void> _downloadSelectedReports() async {
+    if (_selectedScanIds.isEmpty) return;
+    
+    setState(() => _isDownloading = true);
+    
+    try {
+      // Fetch the selected scans from the current stream data
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return;
+      
+      final response = await Supabase.instance.client
+          .from('scans')
+          .select()
+          .eq('user_id', userId)
+          .inFilter('id', _selectedScanIds.toList());
+      
+      final scans = List<Map<String, dynamic>>.from(response);
+      
+      if (!mounted) return;
+      AppNotifications.showInfo(context, "Generating ${scans.length} reports...");
+      
+      int successCount = 0;
+      for (final scan in scans) {
+        try {
+          await PdfService().generateAndShareReport(scan);
+          successCount++;
+        } catch (e) {
+          debugPrint("Failed to download report ${scan['id']}: $e");
+        }
+      }
+      
+      if (mounted) {
+        AppNotifications.showSuccess(context, "Downloaded $successCount of ${scans.length} reports");
+        setState(() {
+          _isSelectionMode = false;
+          _selectedScanIds.clear();
+        });
+      }
+    } catch (e) {
+      if (mounted) AppNotifications.showError(context, "Failed to download reports: $e");
+    } finally {
+      if (mounted) setState(() => _isDownloading = false);
     }
   }
 }

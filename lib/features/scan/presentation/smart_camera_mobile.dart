@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:eyevlm_app/core/theme/app_tokens.dart';
+import 'package:eyevlm_app/core/config/camera_overlay_config.dart';
 
 class SmartCameraScreen extends StatefulWidget {
   final Function(String path) onImageCaptured;
@@ -68,7 +69,7 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
 
       _controller = CameraController(
         camera,
-        ResolutionPreset.high, // High Res for Data Collection
+        ResolutionPreset.max, // Max Res for Best Details
         enableAudio: false,
         imageFormatGroup: kIsWeb || Platform.isAndroid 
             ? ImageFormatGroup.nv21 
@@ -114,7 +115,7 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
       if (!mounted) return;
 
       if (faces.isEmpty) {
-        _updateStatus("No face detected - Position your face", Colors.red);
+        _updateStatus("No eye detected - Position your eye", Colors.red);
         _resetStability();
       } else {
         // We only care about the biggest face (closest to camera)
@@ -162,10 +163,10 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
       _updateStatus("Move closer to the camera", Colors.orange);
       _resetStability();
     } else if (!eyesOpen) {
-      _updateStatus("Open your eyes wider!", Colors.orange);
+      _updateStatus("Open your eye wider!", Colors.orange);
       _resetStability();
     } else if (!centered) {
-      _updateStatus("Center your face in the frame", Colors.orange);
+      _updateStatus("Center your eye in the frame", Colors.orange);
       _resetStability();
     } else {
       // ALL CONDITIONS MET!
@@ -197,10 +198,11 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
     }
   }
 
+
   Future<void> _takePicture() async {
     if (!_isCameraInitialized || _isCapturing) return;
     
-    _isCapturing = true;
+    setState(() => _isCapturing = true);
     _updateStatus("Capturing high-res image...", Colors.green);
     
     try {
@@ -210,18 +212,112 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
       final XFile file = await _controller!.takePicture();
       
       if (mounted) {
-        widget.onImageCaptured(file.path);
+        // Show preview dialog with Retake/Continue options
+        final shouldContinue = await _showCapturePreview(file.path);
+        
+        if (shouldContinue == true) {
+          // User confirmed - proceed to clinical form
+          widget.onImageCaptured(file.path);
+        } else {
+          // User wants to retake - restart stream
+          if (_controller != null && _controller!.value.isInitialized) {
+            await _controller!.startImageStream(_processCameraImage);
+          }
+          _updateStatus("Position your eye in the frame", Colors.orange);
+          _resetStability();
+        }
       }
     } catch (e) {
       debugPrint("Error capturing: $e");
       _updateStatus("Capture failed. Try again.", Colors.red);
-      _isCapturing = false;
       // Restart stream if capture failed
       if (_controller != null && _controller!.value.isInitialized) {
         await _controller!.startImageStream(_processCameraImage);
       }
+    } finally {
+      // CRITICAL: Always reset capturing state
+      if (mounted) {
+        setState(() => _isCapturing = false);
+      }
     }
   }
+
+  /// Shows a preview of the captured image and asks user to confirm or retake
+  Future<bool?> _showCapturePreview(String imagePath) async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        contentPadding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Image Preview
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              child: Image.file(
+                File(imagePath),
+                height: 250,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Title
+            const Text(
+              "Review Your Capture",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                "Is the eye clearly visible and in focus?",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Action Buttons
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context, false),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text("Retake"),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(context, true),
+                      icon: const Icon(Icons.check),
+                      label: const Text("Continue"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   // --- Helper: Convert CameraImage to ML Kit InputImage ---
   InputImage? _inputImageFromCameraImage(CameraImage image) {
@@ -324,40 +420,14 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
             child: CameraPreview(_controller!),
           ),
 
-          // 2. Overlay Guide (The Dynamic Color Box)
-          Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 280,
-              height: 350,
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: _statusColor, 
-                  width: 4,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: _statusColor == Colors.green
-                    ? [BoxShadow(color: Colors.green.withAlpha(100), blurRadius: 20, spreadRadius: 2)]
-                    : null,
-              ),
+          // 2. Eye Focus Overlay (Oval shape for eye scanning)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _EyeOverlayPainter(borderColor: _statusColor),
             ),
           ),
 
-          // 3. Corner Markers for Professional Look
-          Center(
-            child: SizedBox(
-              width: 300,
-              height: 370,
-              child: Stack(
-                children: [
-                  _buildCorner(Alignment.topLeft),
-                  _buildCorner(Alignment.topRight),
-                  _buildCorner(Alignment.bottomLeft),
-                  _buildCorner(Alignment.bottomRight),
-                ],
-              ),
-            ),
-          ),
+          // 3. Removed corner markers (using oval overlay instead)
 
           // 4. Top Status Bar
           Positioned(
@@ -407,11 +477,11 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
             ),
           ),
 
-          // 5. Status Message at Bottom
+          // 5. Status Message at Bottom (moved up to avoid overlap)
           Positioned(
-            bottom: 100,
-            left: 0,
-            right: 0,
+            bottom: 150,
+            left: 16,
+            right: 16,
             child: Center(
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -425,7 +495,7 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white, 
-                    fontSize: 18, 
+                    fontSize: 16, 
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -433,69 +503,48 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
             ),
           ),
           
-          // 6. Manual Override Button
+          // 6. Manual Override Button (wrapped in SafeArea)
           Positioned(
-            bottom: 30,
+            bottom: 0,
             left: 0,
             right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Back Button
-                FloatingActionButton(
-                  heroTag: "back",
-                  backgroundColor: Colors.white24,
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Icon(Icons.arrow_back, color: Colors.white),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Back Button
+                    FloatingActionButton(
+                      heroTag: "back",
+                      backgroundColor: Colors.white24,
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Icon(Icons.arrow_back, color: Colors.white),
+                    ),
+                    const SizedBox(width: 40),
+                    // Manual Capture Button
+                    FloatingActionButton.large(
+                      heroTag: "capture",
+                      backgroundColor: AppColors.lightPrimary,
+                      onPressed: _isCapturing ? null : () => _takePicture(),
+                      child: _isCapturing 
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Icon(Icons.camera_alt, color: Colors.white, size: 36),
+                    ),
+                    const SizedBox(width: 40),
+                    // Switch Camera Button
+                    FloatingActionButton(
+                      heroTag: "switch",
+                      backgroundColor: Colors.white24,
+                      onPressed: _switchCamera,
+                      child: const Icon(Icons.flip_camera_ios, color: Colors.white),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 40),
-                // Manual Capture Button
-                FloatingActionButton.large(
-                  heroTag: "capture",
-                  backgroundColor: AppColors.lightPrimary,
-                  onPressed: _isCapturing ? null : () => _takePicture(),
-                  child: _isCapturing 
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Icon(Icons.camera_alt, color: Colors.white, size: 36),
-                ),
-                const SizedBox(width: 40),
-                // Switch Camera Button
-                FloatingActionButton(
-                  heroTag: "switch",
-                  backgroundColor: Colors.white24,
-                  onPressed: _switchCamera,
-                  child: const Icon(Icons.flip_camera_ios, color: Colors.white),
-                ),
-              ],
+              ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCorner(Alignment alignment) {
-    return Align(
-      alignment: alignment,
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          border: Border(
-            top: alignment == Alignment.topLeft || alignment == Alignment.topRight
-                ? BorderSide(color: _statusColor, width: 3)
-                : BorderSide.none,
-            bottom: alignment == Alignment.bottomLeft || alignment == Alignment.bottomRight
-                ? BorderSide(color: _statusColor, width: 3)
-                : BorderSide.none,
-            left: alignment == Alignment.topLeft || alignment == Alignment.bottomLeft
-                ? BorderSide(color: _statusColor, width: 3)
-                : BorderSide.none,
-            right: alignment == Alignment.topRight || alignment == Alignment.bottomRight
-                ? BorderSide(color: _statusColor, width: 3)
-                : BorderSide.none,
-          ),
-        ),
       ),
     );
   }
@@ -534,5 +583,80 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
     await _controller!.startImageStream(_processCameraImage);
     
     if (mounted) setState(() {});
+  }
+}
+
+/// Custom painter that draws a dark overlay with an eye-shaped cutout
+class _EyeOverlayPainter extends CustomPainter {
+  final Color borderColor;
+  
+  _EyeOverlayPainter({required this.borderColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.black54;
+    
+    // Create a rectangular path for the whole screen
+    final path = Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
+    
+    // Use CameraOverlayConfig for consistent positioning
+    // This ensures the oval matches the crop rectangle exactly
+    final holeRect = CameraOverlayConfig.getOvalRect(size);
+    
+    final holePath = Path()..addOval(holeRect);
+    
+    // Cut the hole out
+    final finalPath = Path.combine(PathOperation.difference, path, holePath);
+    canvas.drawPath(finalPath, paint);
+
+    // Draw a border around the eye hole to guide user
+    final borderPaint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
+    canvas.drawOval(holeRect, borderPaint);
+    
+    // Add glow effect when green (ready)
+    if (borderColor == Colors.green) {
+      final glowPaint = Paint()
+        ..color = Colors.green.withAlpha(60)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
+      canvas.drawOval(holeRect, glowPaint);
+    }
+    
+    // Draw "Align eye within the oval" text
+    _drawText(canvas, size, holeRect);
+  }
+
+  void _drawText(Canvas canvas, Size size, Rect cropRect) {
+    // Only draw the text if the status isn't green (already aligned)
+    if (borderColor == Colors.green) return;
+    
+    final textPainter = TextPainter(
+      text: const TextSpan(
+        text: 'Align eye within the oval',
+        style: TextStyle(
+          color: Colors.white, 
+          fontSize: 16, 
+          fontWeight: FontWeight.bold,
+          shadows: [
+            Shadow(offset: Offset(0, 1), blurRadius: 3.0, color: Colors.black),
+          ]
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas, 
+      Offset((size.width - textPainter.width) / 2, cropRect.bottom + 20)
+    );
+  }
+  
+  @override
+  bool shouldRepaint(covariant _EyeOverlayPainter oldDelegate) {
+    return oldDelegate.borderColor != borderColor;
   }
 }

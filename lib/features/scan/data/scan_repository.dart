@@ -7,92 +7,120 @@ import 'dart:convert';
 
 /// Repository class that handles the entire scan submission process.
 /// Uses EXISTING 'scans' table and 'eye-images' bucket.
+/// 
+/// CHANGES v1.1:
+/// - Supports multiple images (max 5) via `imagePaths` list
+/// - No automatic cropping (only manual crops by user are used)
+/// - Stores images in `image_urls` JSONB array (backward compatible with `image_url`)
 class ScanRepository {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   /// Submits a complete scan record to the EXISTING database table.
+  /// Supports multiple images (max 5) - no automatic cropping.
   Future<void> submitScan({
-    required String imagePath,
+    required List<String> imagePaths, // List of image paths (max 5)
     required Map<String, dynamic> formData,
     List<PlatformFile>? attachments,
-    Uint8List? imageBytes, // Added for Web
+    List<Uint8List>? imageBytesList, // For Web multi-image
   }) async {
     final user = _supabase.auth.currentUser;
     if (user == null) throw Exception("User not logged in");
 
+    // Validate max 5 images
+    if (imagePaths.length > 5) {
+      throw Exception("Maximum 5 images allowed per scan");
+    }
+
     try {
-      // Generate a Scan Session ID (Timestamp based for now, but acts as a unique folder)
+      // Generate a Scan Session ID (Timestamp based, acts as unique folder)
       final String scanSessionId = '${user.id}_${DateTime.now().millisecondsSinceEpoch}';
       
-      // 1. Upload Image to EXISTING 'eye-images' bucket
-      // Structure: scans/{scanSessionId}/eye_image.{ext}
-      final fileExt = imagePath.split('.').last;
-      final fileName = 'scans/$scanSessionId/eye_image.$fileExt';
+      // ========== UPLOAD ALL IMAGES (No automatic cropping) ==========
+      // Images are already processed (manually cropped by user if desired)
+      List<String> uploadedImageUrls = [];
+      
+      for (int i = 0; i < imagePaths.length; i++) {
+        final imagePath = imagePaths[i];
+        final imageBytes = imageBytesList != null && i < imageBytesList.length 
+            ? imageBytesList[i] 
+            : null;
+        
+        // Upload Image to 'eye-images' bucket
+        // Structure: scans/{scanSessionId}/eye_image_{i}.{ext}
+        final fileExt = imagePath.split('.').last;
+        final fileName = 'scans/$scanSessionId/eye_image_$i.$fileExt';
 
-      debugPrint('Uploading image to eye-images bucket: $fileName');
+        debugPrint('📤 Uploading image $i to: $fileName');
 
-      // Determine MIME type from extension
-      String contentType = 'image/jpeg'; // Default
-      if (fileExt.toLowerCase() == 'png') {
-        contentType = 'image/png';
-      } else if (fileExt.toLowerCase() == 'gif') {
-        contentType = 'image/gif';
-      } else if (fileExt.toLowerCase() == 'webp') {
-        contentType = 'image/webp';
+        // Determine MIME type from extension
+        String contentType = 'image/jpeg'; // Default
+        if (fileExt.toLowerCase() == 'png') {
+          contentType = 'image/png';
+        } else if (fileExt.toLowerCase() == 'gif') {
+          contentType = 'image/gif';
+        } else if (fileExt.toLowerCase() == 'webp') {
+          contentType = 'image/webp';
+        }
+
+        if (kIsWeb) {
+          if (imageBytes == null) {
+            throw Exception("Web upload requires imageBytes for image $i");
+          }
+          await _supabase.storage.from('eye-images').uploadBinary(
+            fileName,
+            imageBytes,
+            fileOptions: FileOptions(cacheControl: '3600', upsert: false, contentType: contentType),
+          );
+        } else {
+          await _supabase.storage.from('eye-images').upload(
+            fileName,
+            File(imagePath),
+            fileOptions: FileOptions(cacheControl: '3600', upsert: false, contentType: contentType),
+          );
+        }
+
+        final imageUrl = _supabase.storage.from('eye-images').getPublicUrl(fileName);
+        uploadedImageUrls.add(imageUrl);
+        debugPrint('✅ Image $i uploaded: $imageUrl');
       }
+      
+      // Primary image URL (first image for backward compatibility)
+      final String primaryImageUrl = uploadedImageUrls.isNotEmpty ? uploadedImageUrls.first : '';
 
-      if (kIsWeb) {
-           if (imageBytes == null) throw Exception("Web upload requires imageBytes to be passed");
-           await _supabase.storage.from('eye-images').uploadBinary(
-             fileName,
-             imageBytes,
-             fileOptions: FileOptions(cacheControl: '3600', upsert: false, contentType: contentType),
-           );
-      } else {
-           await _supabase.storage.from('eye-images').upload(
-             fileName,
-             File(imagePath),
-             fileOptions: FileOptions(cacheControl: '3600', upsert: false, contentType: contentType),
-           );
-      }
-
-      final imageUrl = _supabase.storage.from('eye-images').getPublicUrl(fileName);
-      debugPrint('Image URL: $imageUrl');
-
-      // 1.5 Upload Attachments (if any)
+      // ========== UPLOAD ATTACHMENTS (if any) ==========
       // Structure: scans/{scanSessionId}/attachments/{filename}
       List<Map<String, String>> attachmentLinks = [];
       if (attachments != null) {
         for (final doc in attachments) {
           try {
             final docName = 'scans/$scanSessionId/attachments/${doc.name}';
-            // Handle Web vs Native
             if (kIsWeb) {
-               await _supabase.storage.from('eye-images').uploadBinary(
-                 docName,
-                 doc.bytes!,
-                 fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-               );
+              await _supabase.storage.from('eye-images').uploadBinary(
+                docName,
+                doc.bytes!,
+                fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+              );
             } else {
-               await _supabase.storage.from('eye-images').upload(
-                 docName,
-                 File(doc.path!),
-                 fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-               );
+              await _supabase.storage.from('eye-images').upload(
+                docName,
+                File(doc.path!),
+                fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+              );
             }
             final docUrl = _supabase.storage.from('eye-images').getPublicUrl(docName);
             attachmentLinks.add({'name': doc.name, 'url': docUrl});
+            debugPrint('📎 Attachment uploaded: ${doc.name}');
           } catch (e) {
-            debugPrint("Failed to upload attachment ${doc.name}: $e");
+            debugPrint("⚠️ Failed to upload attachment ${doc.name}: $e");
           }
         }
       }
       
       // Add attachments to clinical data
-      final clinicalData = Map<String, dynamic>.from(formData['clinical_data']);
+      final clinicalData = Map<String, dynamic>.from(formData['clinical_data'] ?? {});
       clinicalData['attachments'] = attachmentLinks;
 
-      // 2. Run Inference (Call Python Backend)
+      // ========== RUN AI INFERENCE ==========
       String prediction = 'Pending';
       double confidence = 0.0;
       Map<String, dynamic>? confidenceMap;
@@ -102,10 +130,10 @@ class ScanRepository {
         // Production Backend URL (Render)
         const String backendUrl = 'https://eyevlm-backend.onrender.com/infer'; 
         
-        // Prepare payload
+        // Use first image for inference
         final inferencePayload = jsonEncode({
-          "image_url": imageUrl,
-          "symptoms": formData['suspected_disease'], // Use disease category as context
+          "image_url": primaryImageUrl,
+          "symptoms": formData['suspected_disease'],
           "language": "en" 
         });
 
@@ -115,66 +143,68 @@ class ScanRepository {
 
         if (token == null) {
           debugPrint("⚠️ No Auth Token found. Skipping AI Analysis.");
-          throw Exception("No Auth Token");
-        }
-
-        final response = await http.post(
-          Uri.parse(backendUrl),
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer $token",
-          },
-          body: inferencePayload,
-        );
-
-        if (response.statusCode == 200) {
-          final result = jsonDecode(response.body);
-          prediction = result['predicted_class'];
-          confidenceMap = result['confidence'];
-          explanation = result['explanation_text'];
-          
-          // Get confidence for the predicted class
-          if (confidenceMap != null && confidenceMap.containsKey(prediction)) {
-             confidence = (confidenceMap[prediction] as num).toDouble();
-          }
-          
-          debugPrint("✅ AI Analysis Complete: $prediction");
         } else {
-          debugPrint("⚠️ Backend Error: ${response.statusCode} - ${response.body}");
+          final response = await http.post(
+            Uri.parse(backendUrl),
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer $token",
+            },
+            body: inferencePayload,
+          );
+
+          if (response.statusCode == 200) {
+            final result = jsonDecode(response.body);
+            prediction = result['predicted_class'] ?? 'Pending';
+            confidenceMap = result['confidence'];
+            explanation = result['explanation_text'];
+            
+            if (confidenceMap != null && confidenceMap.containsKey(prediction)) {
+              confidence = (confidenceMap[prediction] as num).toDouble();
+            }
+            
+            debugPrint("✅ AI Analysis Complete: $prediction ($confidence)");
+          } else {
+            debugPrint("⚠️ Backend Error: ${response.statusCode} - ${response.body}");
+          }
         }
       } catch (e) {
         debugPrint("⚠️ Failed to connect to AI Backend: $e");
         // Fallback to 'Pending' so data is still saved
       }
 
-      // 3. Insert Data into EXISTING 'scans' table
+      // ========== INSERT INTO DATABASE ==========
       await _supabase.from('scans').insert({
         'user_id': user.id,
         'created_at': DateTime.now().toIso8601String(),
-        'image_url': imageUrl,
-
-        // -- EXISTING COLUMNS --
+        
+        // Backward compatible single image URL
+        'image_url': primaryImageUrl,
+        
+        // New: Array of all image URLs
+        'image_urls': uploadedImageUrls,
+        
+        // AI Results
         'prediction': prediction, 
         'confidence': confidence,
         'symptoms': formData['suspected_disease'], 
         
-        // Save the full analysis details in clinical_data
-        // We merge the AI results into the existing clinical data
+        // Clinical data with AI results merged
         'clinical_data': {
-           ...clinicalData,
-           'ai_explanation': explanation,
-           'ai_confidence_map': confidenceMap,
+          ...clinicalData,
+          'ai_explanation': explanation,
+          'ai_confidence_map': confidenceMap,
         },
 
-        // -- NEW RESEARCH COLUMNS --
+        // Research columns
         'patient_age': formData['patient_age'],
         'patient_gender': formData['patient_gender'],
         'suspected_disease': formData['suspected_disease'],
       });
 
-      debugPrint('Scan record saved successfully!');
+      debugPrint('✅ Scan record saved successfully with ${uploadedImageUrls.length} images!');
     } catch (e) {
-      debugPrint('Error submitting scan: $e');
+      debugPrint('❌ Error submitting scan: $e');
       rethrow;
     }
   }
@@ -204,14 +234,14 @@ class ScanRepository {
     return response;
   }
 
-  /// Deletes a scan record and ALL associated files (image + attachments)
-  Future<void> deleteScan(String scanId, String imageUrl) async {
+  /// Deletes a scan record and ALL associated files (images + attachments)
+  Future<void> deleteScan(int scanId, String imageUrl) async {
     final user = _supabase.auth.currentUser;
     if (user == null) throw Exception("User not logged in");
 
     try {
       // Extract the session folder path from URL
-      // URL format: .../eye-images/scans/{sessionId}/eye_image.ext
+      // URL format: .../eye-images/scans/{sessionId}/eye_image_0.ext
       final uri = Uri.parse(imageUrl);
       final pathSegments = uri.pathSegments;
       final eyeImagesIndex = pathSegments.indexOf('eye-images');
@@ -227,14 +257,14 @@ class ScanRepository {
       final storagePath = pathSegments.sublist(eyeImagesIndex + 1).join('/');
       final folderPath = storagePath.substring(0, storagePath.lastIndexOf('/'));
       
-      debugPrint("Deleting all files in folder: $folderPath");
+      debugPrint("🗑️ Deleting all files in folder: $folderPath");
 
       // List all files in the session folder
       final List<FileObject> files = await _supabase.storage
           .from('eye-images')
           .list(path: folderPath);
 
-      // Delete main folder files (eye_image)
+      // Delete main folder files (all eye_images)
       if (files.isNotEmpty) {
         final filesToDelete = files.map((f) => '$folderPath/${f.name}').toList();
         await _supabase.storage.from('eye-images').remove(filesToDelete);
@@ -261,9 +291,9 @@ class ScanRepository {
 
       // Delete from database
       await _supabase.from('scans').delete().eq('id', scanId);
-      debugPrint("Scan $scanId deleted successfully with all files");
+      debugPrint("✅ Scan $scanId deleted successfully with all files");
     } catch (e) {
-      debugPrint("Error during scan deletion: $e");
+      debugPrint("❌ Error during scan deletion: $e");
       // Still try to delete the database record even if storage fails
       await _supabase.from('scans').delete().eq('id', scanId);
       rethrow;

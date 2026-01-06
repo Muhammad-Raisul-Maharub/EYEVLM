@@ -7,15 +7,22 @@ import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// Clinical Data Form - Questionnaire for patient data collection.
-/// This form appears after taking a photo with the Smart Camera.
+/// This form appears after capturing photos with the Smart Camera.
+/// Now supports multiple images (max 5).
 class ClinicalDataForm extends StatefulWidget {
   final Function(Map<String, dynamic>, List<PlatformFile>?) onSubmit;
+  final List<String>? imagePaths; // Changed to List for multi-image
+  final List<Uint8List>? imageBytesList; // Changed to List for Web multi-image
+  
+  // Legacy single image support for backward compatibility
   final String? imagePath;
-  final Uint8List? imageBytes; // Added for Web
+  final Uint8List? imageBytes;
   
   const ClinicalDataForm({
     super.key, 
     required this.onSubmit,
+    this.imagePaths,
+    this.imageBytesList,
     this.imagePath,
     this.imageBytes,
   });
@@ -68,38 +75,8 @@ class _ClinicalDataFormState extends State<ClinicalDataForm> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            // Image preview if available
-            if (widget.imagePath != null) ...[
-              const Text("Captured Image", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 10),
-              Container(
-                height: 120,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.teal.withAlpha(100)),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: widget.imageBytes != null
-                      ? Image.memory(
-                          widget.imageBytes!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Center(
-                            child: Icon(Icons.broken_image, size: 50, color: Colors.grey),
-                          ),
-                        )
-                      : Image.file(
-                          File(widget.imagePath!),
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const Center(
-                            child: Icon(Icons.image, size: 50, color: Colors.grey),
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
+            // Image preview - supports multiple images
+            _buildImageGallery(),
 
             const Text("1. Patient Details", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 10),
@@ -204,19 +181,28 @@ class _ClinicalDataFormState extends State<ClinicalDataForm> {
             ],
 
             const SizedBox(height: 30),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _submit,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-                child: _isLoading 
-                    ? const SizedBox(
-                        height: 24, 
-                        width: 24, 
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                      )
-                    : const Text("Submit Analysis", style: TextStyle(color: Colors.white, fontSize: 18)),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 0),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 56, // Proper touch target height
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _isLoading 
+                        ? const SizedBox(
+                            height: 24, 
+                            width: 24, 
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text("Submit Analysis", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 40),
@@ -361,63 +347,118 @@ class _ClinicalDataFormState extends State<ClinicalDataForm> {
     }
   }
 
-  // --- QUESTION DATA ---
+  // --- BOOLEAN SYMPTOM QUESTIONS (15 Total) ---
+  // Format: Check if YES - provides faster user input and cleaner data for AI
   final List<_Question> _questions = [
-    _Question(1, "Nature of Vision Change", "Distinguishes refractive errors from blockage.", false, [
-      "Blurry, cloudy, or foggy overall",
-      "Part of vision blocked (curtain/eyelid)",
-      "Lost side or central vision",
-      "No significant changes"
-    ]),
-    _Question(2, "Night Vision & Light", "Screens for Night Blindness vs Glare.", true, [
-      "Night Blindness (struggle in dim light)",
-      "Glare/Halos around lights",
-      "Photophobia (light hurts eyes)",
-      "None of these"
-    ]),
-    _Question(3, "Pain Characteristics", "Differentiates Surface vs Deep issues.", false, [
-      "Gritty/Sand-like (scratching)",
-      "Deep Ache (throbbing behind eye)",
-      "Sharp/Stabbing (severe surface pain)",
-      "No Pain (only discomfort)"
-    ]),
-    _Question(4, "Redness Pattern", "Distinguishes Infection from Inflammation.", false, [
-      "One Eye Only",
-      "Both Eyes",
-      "No Redness"
-    ]),
-    _Question(5, "Discharge & Tearing", "Identifies infection type.", false, [
-      "Watery (excessive clear tears)",
-      "Pus/Thick (yellow/green/crusty)",
-      "Stringy (white/mucus-like)",
-      "Dry/None"
-    ]),
-    _Question(6, "Visible Physical Anomalies", "Detects Pterygium, Ptosis, Ulcers.", true, [
-      "Growth (fleshy/triangular)",
-      "Drooping Eyelid(s)",
-      "White Spot on Cornea",
-      "None"
-    ]),
-    _Question(7, "Onset & Duration", "Urgency Triage.", false, [
-      "Sudden (hours to days)",
-      "Gradual (weeks/months/years)"
-    ]),
-    _Question(8, "Trauma & Foreign Body", "Check for injury.", false, [
-      "Yes (injury, surgery, poke)",
-      "No injury or trauma"
-    ]),
-    _Question(9, "Color & Distortion", "Secondary symptom check.", false, [
-      "Colors faded/yellowish",
-      "Straight lines look wavy",
-      "No change"
-    ]),
-    _Question(10, "Risk Factors", "Connects symptoms to causes.", true, [
-      "Contact Lenses",
-      "Autoimmune Disease",
-      "Diabetes / High BP",
-      "None"
-    ]),
+    // Group A: Vision & Sight (5 questions)
+    _Question(1, "Gradual blurring or clouding of vision over time", "Cataract indicator", false, ['Yes', 'No']),
+    _Question(2, "Seeing halos or starbursts around lights at night", "Cataract/Glaucoma", false, ['Yes', 'No']),
+    _Question(3, "Part of vision blocked by drooping eyelid", "Ptosis indicator", false, ['Yes', 'No']),
+    _Question(4, "Sudden, severe vision loss in one eye", "Emergency/Uveitis", false, ['Yes', 'No']),
+    _Question(5, "Colors look faded, washed out, or yellowish", "Cataract indicator", false, ['Yes', 'No']),
+    
+    // Group B: Pain & Sensation (4 questions)
+    _Question(6, "Gritty, scratchy sensation (like sand in the eye)", "Conjunctivitis/Pterygium", false, ['Yes', 'No']),
+    _Question(7, "Deep, aching pain inside or behind the eye", "Uveitis indicator", false, ['Yes', 'No']),
+    _Question(8, "Bright light hurts eyes significantly (Photophobia)", "Uveitis/Keratitis", false, ['Yes', 'No']),
+    _Question(9, "Severe surface pain making it hard to keep eye open", "Keratitis indicator", false, ['Yes', 'No']),
+    
+    // Group C: Physical Signs (4 questions)
+    _Question(10, "One or both eyes are visibly red/bloodshot", "Infection/Inflammation", false, ['Yes', 'No']),
+    _Question(11, "Fleshy growth on the white part of the eye", "Pterygium indicator", false, ['Yes', 'No']),
+    _Question(12, "Discharge (pus, water, or mucus) leaking from eye", "Conjunctivitis", false, ['Yes', 'No']),
+    _Question(13, "White or grey spot on the colored part (cornea)", "Keratitis indicator", false, ['Yes', 'No']),
+    
+    // Group D: History & Risk Factors (2 questions)
+    _Question(14, "Regular contact lens wearer", "Risk factor for Keratitis", false, ['Yes', 'No']),
+    _Question(15, "Have autoimmune disease (Arthritis, Lupus, etc.)", "Risk factor for Uveitis", false, ['Yes', 'No']),
   ];
+
+  /// Builds a horizontal gallery for multiple images
+  Widget _buildImageGallery() {
+    // Get the list of images (support both new multi-image and legacy single image)
+    final List<String> paths = widget.imagePaths ?? 
+        (widget.imagePath != null ? [widget.imagePath!] : []);
+    final List<Uint8List>? bytesList = widget.imageBytesList ?? 
+        (widget.imageBytes != null ? [widget.imageBytes!] : null);
+    
+    if (paths.isEmpty) return const SizedBox.shrink();
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          paths.length == 1 ? "Captured Image" : "Captured Images (${paths.length})",
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 120,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: paths.length,
+            itemBuilder: (context, index) {
+              final path = paths[index];
+              final bytes = bytesList != null && index < bytesList.length 
+                  ? bytesList[index] 
+                  : null;
+              
+              return Padding(
+                padding: EdgeInsets.only(right: index < paths.length - 1 ? 12 : 0),
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.teal.withAlpha(100)),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: bytes != null
+                            ? Image.memory(
+                                bytes,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => const Center(
+                                  child: Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                                ),
+                              )
+                            : Image.file(
+                                File(path),
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => const Center(
+                                  child: Icon(Icons.image, size: 40, color: Colors.grey),
+                                ),
+                              ),
+                      ),
+                    ),
+                    // Badge showing image number
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          "#${index + 1}",
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
 }
 
 class _Question {

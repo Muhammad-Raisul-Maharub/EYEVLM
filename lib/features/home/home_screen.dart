@@ -9,6 +9,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/widgets/responsive_wrapper.dart'; // Added: Responsive Support
+import '../../core/services/update_service.dart'; // Auto-Update Engine
 
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -23,6 +24,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _checkDataConsent();
+    
+    // 🔄 Check for app updates on home screen load (Android only)
+    // This checks GitHub releases and shows forced update dialog if needed
+    if (!kIsWeb) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          UpdateService().checkAndForceUpdate(context);
+        }
+      });
+    }
   }
 
   Future<void> _checkDataConsent() async {

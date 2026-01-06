@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,6 +7,7 @@ import 'core/constants/app_constants.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/providers/locale_provider.dart';
 import 'core/theme/app_theme.dart';
+import 'core/services/offline_sync_service.dart';
 import 'app_router.dart';
 
 void main() async {
@@ -20,6 +22,17 @@ void main() async {
     debugPrint("⚠️ Supabase Initialization Failed: $e");
     // Only blocking if Supabase is absolutely strictly required for ANY UI 
     // But we prefer showing the app with an error state over a blank white screen.
+  }
+
+  // 🔄 Initialize Offline Sync Service (mobile only)
+  // This creates the local queue database and starts listening for connectivity
+  if (!kIsWeb) {
+    try {
+      await OfflineSyncService.instance.initialize();
+      debugPrint("✅ OfflineSyncService initialized");
+    } catch (e) {
+      debugPrint("⚠️ OfflineSyncService init failed: $e");
+    }
   }
 
   // Global Error Handler ("The Backup")

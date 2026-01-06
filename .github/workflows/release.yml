@@ -1,0 +1,67 @@
+name: Build & Release APK
+
+# Trigger: Push a tag starting with "v" (e.g., v1.3.0, v1.4.0)
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout the code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Setup Java (Required for Android Build)
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      # 3. Setup Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      # 4. Decode the Keystore from Secrets (for signed APK)
+      - name: Decode Keystore & Create key.properties
+        run: |
+          # Decode the base64-encoded keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+
+          # Create key.properties file for signing
+          echo "storePassword=${{ secrets.STORE_PASSWORD }}" > android/key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+          echo "storeFile=upload-keystore.jks" >> android/key.properties
+
+      # 5. Install Dependencies
+      - name: Install Flutter Dependencies
+        run: flutter pub get
+
+      # 6. Build the Signed Release APK
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      # 7. Rename APK with version
+      - name: Rename APK
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/EyeVLM_${VERSION}.apk
+
+      # 8. Create GitHub Release & Upload APK
+      - name: Create Release & Upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/EyeVLM_*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

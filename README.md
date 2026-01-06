@@ -12,13 +12,24 @@ EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the 
 
 ---
 
-## 📥 **Try It Now**
+## 📥 **Download & Try**
 
-| Platform | Version | Action |
-| :--- | :--- | :--- |
-| **Web App** | ✅ **Live** | [Launch Web App](https://eyevlm-app.vercel.app) |
-| **Android App** | ✅ **v1.1** | [Download APK](https://drive.google.com/file/d/1eaExq4f8d7wmSyTdqM-86el766NOwlCo/view?usp=sharing) |
-| **Backend API** | ✅ **Live** | [API Status](https://eyevlm-backend.onrender.com) |
+| Platform | Version | Download |
+|:---------|:--------|:---------|
+| **Android App** | ✅ **v1.3.0** | [📱 Download APK](https://github.com/Muhammad-Raisul-Maharub/EYEVLM/releases/latest) |
+| **Web App** | ✅ **Live** | [🌐 Launch Web App](https://eyevlm-app.vercel.app) |
+| **Backend API** | ✅ **Live** | [🔗 API Status](https://eyevlm-backend.onrender.com) |
+
+---
+
+## 🆕 **What's New in v1.3.0**
+
+- 📸 **Multi-Image Capture** - Capture up to 5 images per scan
+- ✂️ **Manual Cropping** - Tap any image to crop (no auto-crop)
+- 🔄 **Auto-Update Engine** - App checks GitHub for new versions
+- 📶 **Offline Mode** - Scans saved locally when offline
+- 🟢 **Connectivity Status** - Visual ONLINE/OFFLINE indicator
+- 🎨 **New Splash Screen** - Branded teal theme
 
 ---
 
@@ -26,57 +37,36 @@ EyeVLM is a cross-platform (Mobile & Web) application designed to assist in the 
 
 ### Smart Camera System
 - **Real-time Face Detection** using Google ML Kit
-- **Eye Open Probability** checking (auto-captures when eyes are open)
-- **Auto-capture** after detecting stable, valid frames
-- **Free-form Image Cropping** for precise selection
+- **Multi-image capture** (up to 5 images per scan)
+- **Manual cropping** - tap to crop any image
+- **Eye Open Probability** checking
 
 ### AI-Powered Analysis
 - **Vision-Language Model** for eye disease detection
 - **Multi-class Prediction** with confidence scores
 - **Explainable AI** providing reasoning for predictions
-- **JWT-authenticated** backend requests
 
 ### Clinical Data Collection
 - **Patient Demographics** (age, gender)
-- **Disease Category** dropdown (Cataract, Glaucoma, Diabetic Retinopathy, etc.)
-- **Symptom Checkboxes** (Blurred Vision, Eye Pain, Redness, etc.)
-- **File Attachments** (medical records, reports)
-- **JSONB Storage** for flexible data analysis
+- **Disease Category** dropdown
+- **Symptom Checkboxes**
+- **File Attachments**
 
-### Data Management
-- **Session-based Storage** (`scans/{sessionId}/`)
-- **Complete Delete** (removes all files + database record)
-- **Cloud History** with instant deletion (optimistic UI)
-- **CSV Export** for thesis data analysis
-- **Secure Storage** via Supabase with Row Level Security
-
-### UI/UX
-- **Modern Teal Theme** with light/dark mode
-- **Responsive Design** works on mobile and web
-- **Professional Onboarding** flow
-- **Glassmorphism Effects** and animations
+### Auto-Update System
+- Automatic update checks on app start
+- Browser-based APK download from GitHub Releases
+- Clear 3-step installation instructions
 
 ---
 
 ## 🛠 **Tech Stack**
 
-### Frontend
-| Technology | Purpose |
-|------------|---------|
-| Flutter 3.x | Cross-platform UI |
-| Riverpod | State Management |
-| GoRouter | Navigation |
-| Google ML Kit | Face Detection |
-| Flutter Animate | Animations |
-
-### Backend
-| Technology | Purpose |
-|------------|---------|
-| FastAPI (Python) | AI Inference API |
-| Supabase | Auth, Database, Storage |
-| PostgreSQL | Data storage with JSONB |
-| Render | Backend hosting |
-| Vercel | Web hosting |
+| Frontend | Backend |
+|----------|---------|
+| Flutter 3.x | FastAPI (Python) |
+| Riverpod | Supabase (Auth, DB, Storage) |
+| GoRouter | PostgreSQL + JSONB |
+| Google ML Kit | Render (hosting) |
 
 ---
 
@@ -90,57 +80,33 @@ lib/
 │   ├── theme/                   # AppTheme, AppTokens
 │   ├── widgets/                 # Reusable UI components
 │   ├── providers/               # Riverpod providers
+│   ├── services/                # UpdateService, OfflineSync, PDF
 │   └── utils/                   # Camera utilities
 └── features/
-    ├── scan/                    # Smart Camera + Clinical Form + Repository
+    ├── scan/                    # Smart Camera + Clinical Form
     ├── history/                 # Scan history + CSV export
     ├── home/                    # Dashboard
     ├── auth/                    # Login/Signup
-    ├── profile/                 # Settings, Privacy, Ethics
-    └── onboarding/              # Welcome screens
-
-backend/
-├── main.py                      # FastAPI server
-├── auth.py                      # JWT verification
-└── requirements.txt             # Python dependencies
+    └── profile/                 # Settings, Privacy
 ```
 
 ---
 
 ## 🔧 **Local Development**
 
-### Prerequisites
-- Flutter SDK 3.0+
-- Python 3.9+ (for backend)
-- Supabase Account
-
-### Setup
 ```bash
 # Clone
 git clone https://github.com/Muhammad-Raisul-Maharub/EYEVLM.git
 cd EYEVLM
 
-# Install Flutter dependencies
+# Install dependencies
 flutter pub get
 
-# Run Frontend
+# Run
 flutter run -d chrome    # Web
 flutter run              # Mobile
-```
 
-### Backend Setup
-```bash
-cd backend
-pip install -r requirements.txt
-python -m uvicorn main:app --reload --port 8080
-```
-
-### Build
-```bash
-# Web
-flutter build web --release
-
-# Android APK
+# Build APK
 flutter build apk --release
 ```
 
@@ -153,40 +119,11 @@ flutter build apk --release
 |--------|------|-------------|
 | id | int8 | Primary key |
 | user_id | uuid | User reference |
-| created_at | timestamptz | Scan timestamp |
-| image_url | text | Supabase storage URL |
+| image_url | text | Primary image URL |
+| image_urls | jsonb | Array of all image URLs |
 | prediction | text | AI prediction result |
 | confidence | float8 | Confidence score |
-| symptoms | text | Disease category |
-| clinical_data | jsonb | Symptoms, notes, attachments, AI explanation |
-| patient_age | int4 | Patient age |
-| patient_gender | text | Male/Female/Other |
-| suspected_disease | text | Disease category |
-
-### Storage Structure
-```
-eye-images/
-└── scans/
-    └── {userId}_{timestamp}/
-        ├── eye_image.jpg
-        └── attachments/
-            └── report.pdf
-```
-
----
-
-## 🌐 **Deployment**
-
-### Web (Vercel)
-```bash
-flutter build web --release
-cd build/web
-vercel deploy --prod
-```
-
-### Backend (Render)
-Deploy from GitHub with environment variable:
-- `SUPABASE_JWT_SECRET` - Your Supabase JWT secret
+| clinical_data | jsonb | Symptoms, notes, AI explanation |
 
 ---
 
