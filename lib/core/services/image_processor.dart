@@ -61,6 +61,33 @@ class ImageProcessor {
       );
       
       debugPrint("ImageProcessor: Cropped image size: ${cropped.width}x${cropped.height}");
+
+      // ========== UPSCALING ==========
+      // Ensure specific minimum resolution for AI (e.g., 1024px)
+      // This preserves detail even when cropping small eyes
+      const int targetMinSize = 1024;
+      if (cropped.width < targetMinSize || cropped.height < targetMinSize) {
+        debugPrint("ImageProcessor: Upscaling to target minimum $targetMinSize px");
+        
+        // Calculate scale factor to preserve aspect ratio
+        double scale = targetMinSize / (cropped.width < cropped.height ? cropped.width : cropped.height);
+        
+        // Don't upscale crazy amounts (cap at 4x to avoid artifacts)
+        if (scale > 4.0) scale = 4.0;
+        
+        if (scale > 1.0) {
+           final newWidth = (cropped.width * scale).round();
+           final newHeight = (cropped.height * scale).round();
+           
+           cropped = img.copyResize(
+             cropped, 
+             width: newWidth, 
+             height: newHeight, 
+             interpolation: img.Interpolation.bicubic
+           );
+           debugPrint("ImageProcessor: Upscaled to ${cropped.width}x${cropped.height}");
+        }
+      }
       
       // Encode as high-quality JPEG
       final Uint8List compressedBytes = Uint8List.fromList(

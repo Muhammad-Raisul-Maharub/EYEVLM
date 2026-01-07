@@ -22,7 +22,70 @@ class AuthService {
   // Admin email constant
   static const String adminEmail = 'admin@eyevlm.com';
 
-  AuthService(this._ref);
+  AuthService(this._ref) {
+    _initSessionRestoration();
+  }
+
+  /// Initialize session restoration listener
+  void _initSessionRestoration() {
+    _ref.listen<AsyncValue<bool>>(connectivityProvider, (previous, next) async {
+      // If we just came online (false -> true or null -> true)
+      final wasOffline = previous?.value == false; // explicit check for false
+      final isOnline = next.value == true;
+      
+      if (wasOffline && isOnline) {
+        debugPrint('🌐 Connectivity restored - Attempting session restoration...');
+        await _restoreSession();
+      }
+    });
+  }
+
+  /// Try to restore session using cached credentials
+  Future<void> _restoreSession() async {
+    // 1. Check if we already have a valid Supabase session
+    if (_auth.currentUser != null) {
+      debugPrint('✅ Session already valid');
+      return;
+    }
+
+    // 2. Check if we have cached credentials
+    final offlineAuth = _ref.read(offlineAuthServiceProvider);
+    if (!await offlineAuth.hasCachedCredentials()) {
+      debugPrint('ℹ️ No cached credentials to restore');
+      return;
+    }
+
+    // 3. Attempt silent login (we don't have the raw password here, 
+    // strictly speaking we need the raw password to re-auth with Supabase 
+    // unless we saved it securely. The OfflineAuthService only saves the hash.
+    // 
+    // CORRECTION: Requires raw password to sign in to Supabase. 
+    // If the user is offline-logged-in, we might prompt them or store the password securely.
+    // However, keeping raw password is risky.
+    //
+    // Alternative: If the JWT token is still valid (persisted by Supabase), 
+    // it will auto-refresh. If not, we can't auto-login without password.
+    
+    // NOTE: Supabase automagically persists sessions. If the token is valid, 
+    // currentUser will be non-null. If it expired while offline, we are stuck.
+    
+    // Since we only store HASH, we cannot auto-login to Supabase without user input.
+    // BUT, if the user entered the password during "Offline Login", we could have 
+    // held it in memory (Provider state) to retry when online.
+    
+    // For now, let's just log that we are online and sync is ready.
+    // If we want TRUE auto-login, we'd need SecureStorage for the raw password.
+    // Given the constraints, we will rely on Supabase's built-in persistence 
+    // and just trigger a token refresh if possible.
+    
+    try {
+      // Force a token refresh if a session exists but might be stale
+      await _auth.refreshSession(); 
+      debugPrint('🔄 Session refreshed successfully');
+    } catch (e) {
+      debugPrint('⚠️ Could not refresh session: $e');
+    }
+  }
 
   /// Sign in - checks connectivity and uses appropriate method
   Future<void> signIn(String email, String password) async {

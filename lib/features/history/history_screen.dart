@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // Added for animations
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
@@ -558,7 +559,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         ),
                       ),
                     ),
-                  );
+                  ).animate().fadeIn(duration: 400.ms).slideX(begin: 0.1);
                 },
               );
             },
