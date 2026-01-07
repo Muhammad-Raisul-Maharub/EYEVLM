@@ -8,7 +8,7 @@
 
 | Platform | Status | Link |
 |:---------|:-------|:-----|
-| **Android App** | ✅ v1.4.0 | [📱 Download APK](https://github.com/Muhammad-Raisul-Maharub/EYEVLM/releases/latest) |
+| **Android App** | ✅ v1.4.6 | [📱 Download APK](https://github.com/Muhammad-Raisul-Maharub/EYEVLM/releases/latest) |
 | **Web App** | ✅ Live | [🌐 Launch Web App](https://eyevlm-app.vercel.app) |
 
 ---
