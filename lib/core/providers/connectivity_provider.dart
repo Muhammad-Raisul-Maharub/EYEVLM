@@ -55,5 +55,5 @@ final connectivityProvider = AsyncNotifierProvider<ConnectivityNotifier, bool>(
 /// Returns false if connectivity state is unknown
 final isOnlineProvider = Provider<bool>((ref) {
   final connectivity = ref.watch(connectivityProvider);
-  return connectivity.valueOrNull ?? true; // Default to online if unknown
+  return connectivity.value ?? true; // Default to online if unknown
 });

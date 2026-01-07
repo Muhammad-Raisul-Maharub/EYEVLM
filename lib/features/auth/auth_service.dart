@@ -113,10 +113,12 @@ class AuthService {
     final user = currentUser;
     if (user == null) return 'Guest';
     
-    // Try to get name from metadata
+    // Try to get name from metadata (with null safety)
     final metadata = user.userMetadata;
-    if (metadata['name'] != null) return metadata['name'];
-    if (metadata['full_name'] != null) return metadata['full_name'];
+    if (metadata != null) {
+      if (metadata['name'] != null) return metadata['name'];
+      if (metadata['full_name'] != null) return metadata['full_name'];
+    }
     
     // Fall back to email
     return user.email?.split('@').first ?? 'User';

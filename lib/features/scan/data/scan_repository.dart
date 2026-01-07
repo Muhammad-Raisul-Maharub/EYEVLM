@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import '../../core/services/offline_sync_service.dart';
+import '../../../core/services/offline_sync_service.dart';
 
 /// Repository class that handles the entire scan submission process.
 /// Uses EXISTING 'scans' table and 'eye-images' bucket.
