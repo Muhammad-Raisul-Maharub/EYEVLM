@@ -112,14 +112,37 @@ class UpdateService {
                 label: const Text("Download Update"),
                 onPressed: () async {
                   final uri = Uri.parse(url);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  try {
+                    // Directly launch without canLaunchUrl check - it can incorrectly
+                    // return false on Android 11+ due to package visibility restrictions
+                    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    if (context.mounted) {
+                      if (launched) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Download started. Open the APK to install when complete."),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 5),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text("Could not open browser. Please visit: $url"),
+                            backgroundColor: Colors.orange,
+                            duration: const Duration(seconds: 8),
+                          ),
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    debugPrint("❌ Failed to launch URL: $e");
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("Download started. Open the APK to install when complete."),
-                          backgroundColor: Colors.green,
-                          duration: Duration(seconds: 5),
+                        SnackBar(
+                          content: Text("Error opening browser: $e"),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 5),
                         ),
                       );
                     }
