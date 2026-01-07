@@ -66,6 +66,7 @@ dependencies:
   # ===== Offline-First Sync =====
   connectivity_plus: ^6.0.0
   sqflite: ^2.3.0
+  crypto: ^3.0.3 # For secure credential hashing
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -10,6 +10,7 @@ import 'features/profile/help_support_screen.dart';
 import 'features/profile/ethical_reasoning_screen.dart';
 import 'features/profile/privacy_security_screen.dart';
 import 'features/navigation/scaffold_with_nav_bar.dart';
+import 'features/admin/admin_dashboard_screen.dart';
 
 import 'features/onboarding/splash_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
@@ -72,7 +73,16 @@ final router = GoRouter(
             ),
           ],
         ),
-        // Tab 3: Profile
+        // Tab 3: Admin (conditional visibility in nav bar)
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/admin',
+              builder: (context, state) => const AdminDashboardScreen(),
+            ),
+          ],
+        ),
+        // Tab 4: Profile
         StatefulShellBranch(
           routes: [
             GoRoute(

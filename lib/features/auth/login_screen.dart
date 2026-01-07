@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/widgets/responsive_wrapper.dart';
-import '../../core/utils/app_notifications.dart'; // Import
+import '../../core/utils/app_notifications.dart';
+import '../../core/providers/connectivity_provider.dart';
+import '../../core/widgets/connectivity_banner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_service.dart';
 
@@ -22,28 +25,73 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isLoading = false;
   bool _isPasswordVisible = false;
   String? _errorMessage;
+  String _appVersion = '1.0.0';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAppVersion();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _appVersion = packageInfo.version;
+        });
+      }
+    } catch (e) {
+      // Keep default version
+    }
+  }
 
   Future<void> _handleLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    
+    // Basic validation
+    if (email.isEmpty || password.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter both email and password';
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      await ref.read(authServiceProvider).signIn(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
+      await ref.read(authServiceProvider).signIn(email, password);
       
       if (mounted) {
         context.go('/');
       }
     } catch (e) {
       if (mounted) {
+        String errorMsg = e.toString();
+        
+        // User-friendly error messages
+        if (errorMsg.contains('Invalid login credentials')) {
+          errorMsg = 'Invalid email or password';
+        } else if (errorMsg.contains('SocketException') || 
+                   errorMsg.contains('Failed host lookup')) {
+          final isOnline = ref.read(isOnlineProvider);
+          if (!isOnline) {
+            errorMsg = 'You are offline. Please connect to the internet or use previously saved credentials.';
+          } else {
+            errorMsg = 'Connection error. Please check your internet and try again.';
+          }
+        } else if (errorMsg.contains('Offline login failed')) {
+          errorMsg = 'Offline login failed. Please connect to the internet to verify your credentials.';
+        } else {
+          errorMsg = 'Login failed. Please try again.';
+        }
+        
         setState(() {
-          _errorMessage = e.toString().contains('Invalid login credentials') 
-              ? 'Invalid email or password' 
-              : 'Login failed: ${e.toString()}';
+          _errorMessage = errorMsg;
         });
       }
     } finally {
@@ -62,12 +110,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  // 📱 MOBILE LAYOUT (Original)
+  // 📱 MOBILE LAYOUT
   Widget _buildMobileLayout(BuildContext context) {
     return SingleChildScrollView(
       child: Column(
         children: [
-          // 🌊 1. CURVED HEADER
+          // 🌊 1. CURVED HEADER with centered content
           Container(
             height: 300,
             width: double.infinity,
@@ -78,28 +126,61 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 bottomRight: Radius.circular(40),
               ),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.remove_red_eye, size: 80, color: Colors.white)
-                    .animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
-                const SizedBox(height: 16),
-                Text(
-                  "EyeVLM Research",
-                  style: GoogleFonts.poppins(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+            child: SafeArea(
+              bottom: false,
+              child: Stack(
+                children: [
+                  // Connectivity indicator in top right
+                  Positioned(
+                    top: 8,
+                    right: 16,
+                    child: const ConnectivityIndicator(
+                      size: 20,
+                      showOnlineState: false,
+                    ),
                   ),
-                ),
-                Text(
-                  "Early Disease Detection System",
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: Colors.white.withAlpha(230),
+                  // Centered logo and text
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.remove_red_eye,
+                            size: 64,
+                            color: Colors.white,
+                          ),
+                        ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
+                        const SizedBox(height: 20),
+                        Text(
+                          "EyeVLM Research",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Early Disease Detection System",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 
@@ -128,23 +209,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           flex: 1,
           child: Container(
             color: const Color(0xFF009688),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Stack(
               children: [
-                const Icon(Icons.remove_red_eye_rounded, size: 100, color: Colors.white)
-                    .animate().scale(duration: 800.ms, curve: Curves.elasticOut),
-                const SizedBox(height: 24),
-                Text(
-                  "EyeVLM",
-                  style: GoogleFonts.poppins(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white),
+                // Connectivity indicator
+                Positioned(
+                  top: 16,
+                  right: 16,
+                  child: const ConnectivityIndicator(
+                    size: 24,
+                    showOnlineState: false,
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: Text(
-                    "Advanced AI-powered early disease detection system for healthier vision.",
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(fontSize: 16, color: Colors.white.withAlpha(200)),
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.remove_red_eye_rounded,
+                          size: 80,
+                          color: Colors.white,
+                        ),
+                      ).animate().scale(duration: 800.ms, curve: Curves.elasticOut),
+                      const SizedBox(height: 32),
+                      Text(
+                        "EyeVLM",
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 40,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 40),
+                        child: Text(
+                          "Advanced AI-powered early disease detection system for healthier vision.",
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            color: Colors.white.withOpacity(0.85),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -163,9 +278,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Welcome Back", style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
+                    Text(
+                      "Welcome Back",
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 8),
-                    Text("Please enter your details to sign in.", style: TextStyle(color: Colors.grey[600])),
+                    Text(
+                      "Please enter your details to sign in.",
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
                     const SizedBox(height: 40),
                     _buildLoginForm(context),
                     const SizedBox(height: 40),
@@ -182,8 +305,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   // Reusable Form Component
   Widget _buildLoginForm(BuildContext context) {
+    final isOnline = ref.watch(isOnlineProvider);
+    
     return Column(
       children: [
+        // Offline notice
+        if (!isOnline)
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.wifi_off, color: Colors.orange.shade700, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'You are offline. Login with saved credentials.',
+                    style: TextStyle(
+                      color: Colors.orange.shade800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ).animate().fadeIn(),
+
+        // Error message
         if (_errorMessage != null)
           Container(
             padding: const EdgeInsets.all(12),
@@ -197,7 +350,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
               textAlign: TextAlign.center,
             ),
-          ).animate().fadeIn(),
+          ).animate().fadeIn().shake(duration: 300.ms),
 
         TextFormField(
           controller: _emailController,
@@ -206,6 +359,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             prefixIcon: Icon(Icons.email),
           ),
           keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.email],
         ),
         const SizedBox(height: 16),
         TextFormField(
@@ -225,14 +380,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               },
             ),
           ),
+          textInputAction: TextInputAction.done,
+          autofillHints: const [AutofillHints.password],
+          onFieldSubmitted: (_) => _handleLogin(),
         ),
         
-        // Forgot Password Placeholder
+        // Forgot Password
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
-            onPressed: () => _showResetPasswordDialog(), 
-            child: const Text("Forgot Password?", style: TextStyle(color: Colors.grey)),
+            onPressed: isOnline ? _showResetPasswordDialog : () {
+              AppNotifications.showInfo(context, 'Password reset requires an internet connection');
+            },
+            child: Text(
+              "Forgot Password?",
+              style: TextStyle(
+                color: isOnline ? Colors.grey : Colors.grey.shade400,
+              ),
+            ),
           ),
         ),
 
@@ -243,15 +408,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           child: ElevatedButton(
             onPressed: _isLoading ? null : _handleLogin,
             child: _isLoading 
-                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text("Log In Securely"),
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(isOnline ? "Log In Securely" : "Log In Offline"),
           ),
         ),
         
         const SizedBox(height: 16),
         TextButton(
-          onPressed: () => context.push('/signup'),
-          child: Text(AppStrings.tr(ref, 'msgNoAccount')),
+          onPressed: isOnline 
+              ? () => context.push('/signup')
+              : () {
+                  AppNotifications.showInfo(context, 'Sign up requires an internet connection');
+                },
+          child: Text(
+            AppStrings.tr(ref, 'msgNoAccount'),
+            style: TextStyle(
+              color: isOnline ? null : Colors.grey.shade400,
+            ),
+          ),
         ),
       ],
     ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2);
@@ -272,7 +453,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             text: "Raisul Maharub",
             style: GoogleFonts.poppins(fontWeight: FontWeight.w600), 
           ),
-          const TextSpan(text: "\nVersion 1.0.0"),
+          TextSpan(text: "\nVersion $_appVersion"),
         ],
       ),
     );
@@ -293,7 +474,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const SizedBox(height: 16),
               TextField(
                 controller: resetEmailController,
-                decoration: const InputDecoration(labelText: "Email", border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: "Email",
+                  border: OutlineInputBorder(),
+                ),
                 keyboardType: TextInputType.emailAddress,
               ),
             ],
@@ -308,7 +492,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 final email = resetEmailController.text.trim();
                 if (email.isEmpty) return;
 
-                Navigator.pop(dialogContext); // Close dialog
+                Navigator.pop(dialogContext);
                 
                 try {
                   await Supabase.instance.client.auth.resetPasswordForEmail(email);

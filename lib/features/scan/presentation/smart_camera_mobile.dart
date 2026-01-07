@@ -38,7 +38,8 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
   // Logic State
   bool _eyesOpen = false;
   bool _faceCentered = false;
-  int _goodFramesCount = 0; // To track "steadiness"
+  int _goodFramesCount = 0; // To track "steadiness" (~10 frames per second)
+  static const int _captureThreshold = 30; // ~3 seconds of steady frames
 
   @override
   void initState() {
@@ -172,14 +173,18 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
       // ALL CONDITIONS MET!
       _goodFramesCount++;
       
-      if (_goodFramesCount < 5) {
-        _updateStatus("Hold steady... ${5 - _goodFramesCount}", Colors.green.shade400);
-      } else if (_goodFramesCount < 10) {
+      // Calculate seconds remaining for visual countdown
+      final framesRemaining = _captureThreshold - _goodFramesCount;
+      final secondsRemaining = (framesRemaining / 10).ceil(); // ~10fps
+      
+      if (secondsRemaining > 0) {
+        _updateStatus("Hold steady... $secondsRemaining", Colors.green.shade400);
+      } else {
         _updateStatus("Perfect! Capturing...", Colors.green);
       }
 
-      // If good for ~10 frames (~0.5-1 second), auto-capture
-      if (_goodFramesCount >= 10 && !_isCapturing) {
+      // If good for ~3 seconds (30 frames), auto-capture
+      if (_goodFramesCount >= _captureThreshold && !_isCapturing) {
         _takePicture();
       }
     }

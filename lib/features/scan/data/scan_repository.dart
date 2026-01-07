@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import '../../core/services/offline_sync_service.dart';
 
 /// Repository class that handles the entire scan submission process.
 /// Uses EXISTING 'scans' table and 'eye-images' bucket.
@@ -17,6 +19,7 @@ class ScanRepository {
 
   /// Submits a complete scan record to the EXISTING database table.
   /// Supports multiple images (max 5) - no automatic cropping.
+  /// Falls back to offline queue if no internet connection.
   Future<void> submitScan({
     required List<String> imagePaths, // List of image paths (max 5)
     required Map<String, dynamic> formData,
@@ -29,6 +32,23 @@ class ScanRepository {
     // Validate max 5 images
     if (imagePaths.length > 5) {
       throw Exception("Maximum 5 images allowed per scan");
+    }
+
+    // Check connectivity and fall back to offline queue if needed
+    if (!kIsWeb) {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      final isOnline = connectivityResult.any((r) => r != ConnectivityResult.none);
+      
+      if (!isOnline) {
+        debugPrint("📴 Offline detected - queuing scan locally");
+        await OfflineSyncService.instance.queueScan(
+          imagePaths: imagePaths,
+          formData: formData,
+          attachments: attachments,
+        );
+        debugPrint("✅ Scan queued for later sync");
+        return; // Exit early - will sync when online
+      }
     }
 
     try {

@@ -7,12 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 
 /// Offline-First Service for background sync of scans
 /// 
 /// Features:
+/// - Copies images to persistent storage before queuing
 /// - Saves scans locally when offline
 /// - Automatically syncs when connectivity returns
 /// - Maintains a queue of pending uploads
@@ -22,11 +24,24 @@ class OfflineSyncService {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
   
+  // Notifier for pending count changes
+  final ValueNotifier<int> pendingCountNotifier = ValueNotifier(0);
+  
   OfflineSyncService._();
   
   static OfflineSyncService get instance {
     _instance ??= OfflineSyncService._();
     return _instance!;
+  }
+
+  /// Get the persistent directory for offline images
+  Future<Directory> get _offlineImagesDir async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final offlineDir = Directory('${appDir.path}/offline_queue_images');
+    if (!await offlineDir.exists()) {
+      await offlineDir.create(recursive: true);
+    }
+    return offlineDir;
   }
 
   /// Initialize the offline database and start listening for connectivity
@@ -38,6 +53,7 @@ class OfflineSyncService {
     
     await _initDatabase();
     _startConnectivityListener();
+    await _updatePendingCount();
     
     // Attempt sync on startup
     await syncPendingScans();
@@ -49,7 +65,7 @@ class OfflineSyncService {
     
     _database = await openDatabase(
       path,
-      version: 1,
+      version: 2, // Bumped version for migration
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE pending_scans (
@@ -59,10 +75,21 @@ class OfflineSyncService {
             form_data TEXT NOT NULL,
             attachment_paths TEXT,
             retry_count INTEGER DEFAULT 0,
-            last_error TEXT
+            last_error TEXT,
+            status TEXT DEFAULT 'pending'
           )
         ''');
         debugPrint("✅ Offline queue database created");
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // Add status column if upgrading from v1
+          try {
+            await db.execute('ALTER TABLE pending_scans ADD COLUMN status TEXT DEFAULT "pending"');
+          } catch (e) {
+            debugPrint("⚠️ Migration error (may already exist): $e");
+          }
+        }
       },
     );
   }
@@ -83,7 +110,30 @@ class OfflineSyncService {
     return result.any((r) => r != ConnectivityResult.none);
   }
 
+  /// Copy image to persistent storage and return new path
+  Future<String> _copyImageToPersistentStorage(String originalPath, String queueId) async {
+    try {
+      final file = File(originalPath);
+      if (!await file.exists()) {
+        throw Exception('Source file does not exist: $originalPath');
+      }
+      
+      final offlineDir = await _offlineImagesDir;
+      final fileName = '${queueId}_${basename(originalPath)}';
+      final newPath = '${offlineDir.path}/$fileName';
+      
+      await file.copy(newPath);
+      debugPrint("📁 Copied image to persistent storage: $newPath");
+      
+      return newPath;
+    } catch (e) {
+      debugPrint("❌ Failed to copy image: $e");
+      rethrow;
+    }
+  }
+
   /// Save a scan locally for later upload
+  /// Copies images to persistent storage to avoid PathNotFoundException
   Future<int> queueScan({
     required List<String> imagePaths,
     required Map<String, dynamic> formData,
@@ -91,39 +141,78 @@ class OfflineSyncService {
   }) async {
     if (_database == null) await _initDatabase();
     
-    // Convert attachment files to paths
-    List<String> attachmentPaths = [];
+    final queueId = DateTime.now().millisecondsSinceEpoch.toString();
+    
+    // Copy images to persistent storage
+    List<String> persistentImagePaths = [];
+    for (int i = 0; i < imagePaths.length; i++) {
+      try {
+        final originalPath = imagePaths[i];
+        final persistentPath = await _copyImageToPersistentStorage(originalPath, '${queueId}_img$i');
+        persistentImagePaths.add(persistentPath);
+      } catch (e) {
+        debugPrint("⚠️ Failed to copy image $i: $e");
+        // Still try to use original path as fallback
+        persistentImagePaths.add(imagePaths[i]);
+      }
+    }
+    
+    // Copy attachments to persistent storage
+    List<String> persistentAttachmentPaths = [];
     if (attachments != null) {
-      for (final file in attachments) {
+      for (int i = 0; i < attachments.length; i++) {
+        final file = attachments[i];
         if (file.path != null) {
-          attachmentPaths.add(file.path!);
+          try {
+            final persistentPath = await _copyImageToPersistentStorage(file.path!, '${queueId}_attach$i');
+            persistentAttachmentPaths.add(persistentPath);
+          } catch (e) {
+            debugPrint("⚠️ Failed to copy attachment $i: $e");
+            persistentAttachmentPaths.add(file.path!);
+          }
         }
       }
     }
     
     final id = await _database!.insert('pending_scans', {
       'created_at': DateTime.now().toIso8601String(),
-      'image_paths': jsonEncode(imagePaths),
+      'image_paths': jsonEncode(persistentImagePaths),
       'form_data': jsonEncode(formData),
-      'attachment_paths': jsonEncode(attachmentPaths),
+      'attachment_paths': jsonEncode(persistentAttachmentPaths),
       'retry_count': 0,
+      'status': 'pending',
     });
     
-    debugPrint("📦 Scan queued offline (ID: $id)");
+    debugPrint("📦 Scan queued offline (ID: $id) with ${persistentImagePaths.length} images");
+    await _updatePendingCount();
+    
     return id;
+  }
+
+  /// Update the pending count notifier
+  Future<void> _updatePendingCount() async {
+    final count = await getPendingCount();
+    pendingCountNotifier.value = count;
   }
 
   /// Get count of pending scans
   Future<int> getPendingCount() async {
     if (_database == null) return 0;
-    final result = await _database!.rawQuery('SELECT COUNT(*) as count FROM pending_scans');
+    final result = await _database!.rawQuery(
+      'SELECT COUNT(*) as count FROM pending_scans WHERE status = "pending"'
+    );
     return (result.first['count'] as int?) ?? 0;
   }
 
   /// Get all pending scans
   Future<List<Map<String, dynamic>>> getPendingScans() async {
     if (_database == null) return [];
-    return await _database!.query('pending_scans', orderBy: 'created_at ASC');
+    return await _database!.query(
+      'pending_scans',
+      where: 'status = ?',
+      whereArgs: ['pending'],
+      orderBy: 'created_at ASC',
+    );
   }
 
   /// Sync all pending scans when online
@@ -150,34 +239,67 @@ class OfflineSyncService {
           final formData = Map<String, dynamic>.from(jsonDecode(scan['form_data']));
           final attachmentPaths = List<String>.from(jsonDecode(scan['attachment_paths'] ?? '[]'));
           
+          // Verify all image files exist before uploading
+          List<String> validImagePaths = [];
+          for (final path in imagePaths) {
+            final file = File(path);
+            if (await file.exists()) {
+              validImagePaths.add(path);
+            } else {
+              debugPrint("⚠️ Image file not found: $path");
+            }
+          }
+          
+          if (validImagePaths.isEmpty) {
+            throw Exception('No valid image files found for this scan');
+          }
+          
           // Convert paths back to PlatformFile objects
           List<PlatformFile>? attachments;
           if (attachmentPaths.isNotEmpty) {
-            attachments = attachmentPaths.map((path) {
+            attachments = [];
+            for (final path in attachmentPaths) {
               final file = File(path);
-              return PlatformFile(
-                path: path,
-                name: path.split('/').last,
-                size: file.existsSync() ? file.lengthSync() : 0,
-              );
-            }).toList();
+              if (await file.exists()) {
+                attachments.add(PlatformFile(
+                  path: path,
+                  name: basename(path),
+                  size: await file.length(),
+                ));
+              }
+            }
           }
           
           // Upload to Supabase
-          await _uploadScan(imagePaths, formData, attachments);
+          await _uploadScan(validImagePaths, formData, attachments);
           
-          // Remove from queue on success
-          await _database!.delete('pending_scans', where: 'id = ?', whereArgs: [scan['id']]);
+          // Mark as synced
+          await _database!.update(
+            'pending_scans',
+            {'status': 'synced'},
+            where: 'id = ?',
+            whereArgs: [scan['id']],
+          );
+          
+          // Clean up local files
+          await _cleanupSyncedFiles(imagePaths, attachmentPaths);
+          
           successCount++;
           debugPrint("✅ Synced scan ID: ${scan['id']}");
           
         } catch (e) {
           // Update retry count and error
+          final retryCount = (scan['retry_count'] ?? 0) + 1;
+          
+          // Mark as failed if too many retries
+          final status = retryCount >= 5 ? 'failed' : 'pending';
+          
           await _database!.update(
             'pending_scans',
             {
-              'retry_count': (scan['retry_count'] ?? 0) + 1,
+              'retry_count': retryCount,
               'last_error': e.toString(),
+              'status': status,
             },
             where: 'id = ?',
             whereArgs: [scan['id']],
@@ -188,6 +310,7 @@ class OfflineSyncService {
       }
     } finally {
       _isSyncing = false;
+      await _updatePendingCount();
     }
     
     return SyncResult(
@@ -197,13 +320,27 @@ class OfflineSyncService {
     );
   }
 
+  /// Clean up local files after successful sync
+  Future<void> _cleanupSyncedFiles(List<String> imagePaths, List<String> attachmentPaths) async {
+    for (final path in [...imagePaths, ...attachmentPaths]) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+          debugPrint("🗑️ Cleaned up: $path");
+        }
+      } catch (e) {
+        debugPrint("⚠️ Failed to cleanup file: $e");
+      }
+    }
+  }
+
   /// Upload a scan to Supabase
   Future<void> _uploadScan(
     List<String> imagePaths,
     Map<String, dynamic> formData,
     List<PlatformFile>? attachments,
   ) async {
-    // This mirrors the ScanRepository logic but for queued scans
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
     if (user == null) throw Exception("User not logged in");
@@ -213,12 +350,18 @@ class OfflineSyncService {
     
     for (int i = 0; i < imagePaths.length; i++) {
       final imagePath = imagePaths[i];
-      final fileExt = imagePath.split('.').last;
+      final file = File(imagePath);
+      
+      if (!await file.exists()) {
+        throw Exception('Image file not found: $imagePath');
+      }
+      
+      final fileExt = extension(imagePath).replaceFirst('.', '');
       final fileName = 'scans/$scanSessionId/eye_image_$i.$fileExt';
       
       await supabase.storage.from('eye-images').upload(
         fileName,
-        File(imagePath),
+        file,
         fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
       );
       
@@ -231,10 +374,13 @@ class OfflineSyncService {
     if (attachments != null) {
       for (final doc in attachments) {
         if (doc.path == null) continue;
+        final file = File(doc.path!);
+        if (!await file.exists()) continue;
+        
         final docName = 'scans/$scanSessionId/attachments/${doc.name}';
         await supabase.storage.from('eye-images').upload(
           docName,
-          File(doc.path!),
+          file,
           fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
         );
         final docUrl = supabase.storage.from('eye-images').getPublicUrl(docName);
@@ -252,7 +398,7 @@ class OfflineSyncService {
       'created_at': DateTime.now().toIso8601String(),
       'image_url': uploadedImageUrls.isNotEmpty ? uploadedImageUrls.first : '',
       'image_urls': uploadedImageUrls,
-      'prediction': 'Pending', // Will need AI inference later
+      'prediction': 'Pending',
       'confidence': 0.0,
       'symptoms': formData['suspected_disease'],
       'clinical_data': clinicalData,
@@ -265,7 +411,17 @@ class OfflineSyncService {
   /// Clear all pending scans (use with caution)
   Future<void> clearQueue() async {
     if (_database == null) return;
+    
+    // Clean up all files first
+    final pending = await _database!.query('pending_scans');
+    for (final scan in pending) {
+      final imagePaths = List<String>.from(jsonDecode(scan['image_paths'].toString()));
+      final attachmentPaths = List<String>.from(jsonDecode(scan['attachment_paths'].toString()));
+      await _cleanupSyncedFiles(imagePaths, attachmentPaths);
+    }
+    
     await _database!.delete('pending_scans');
+    await _updatePendingCount();
     debugPrint("🗑️ Offline queue cleared");
   }
 
