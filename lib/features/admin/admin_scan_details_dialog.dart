@@ -240,7 +240,7 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
                           Text(
                             DateFormat('MMM d, yyyy • h:mm a').format(createdAt),
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
+                              color: Colors.white.withValues(alpha: 0.8),
                               fontSize: 12,
                             ),
                           ),

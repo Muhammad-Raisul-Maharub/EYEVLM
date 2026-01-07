@@ -74,7 +74,7 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: AppColors.lightPrimary.withOpacity(0.1),
+                color: AppColors.lightPrimary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -129,7 +129,7 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
         // Header info
         Container(
           padding: const EdgeInsets.all(16),
-          color: Colors.green.withOpacity(0.1),
+          color: Colors.green.withValues(alpha: 0.1),
           child: Row(
             children: [
               const Icon(Icons.check_circle, color: Colors.green),
@@ -171,7 +171,7 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: Colors.black.withValues(alpha: 0.1),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -251,7 +251,7 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.refresh, color: Colors.orange, size: 18),
@@ -319,16 +319,16 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            BoxShadow(color: color.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 5)),
+            BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 5)),
           ],
-          border: Border.all(color: color.withOpacity(0.5)),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: color, size: 32),
@@ -467,6 +467,7 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
 
     if (croppedFile != null && mounted) {
       final bytes = await croppedFile.readAsBytes();
+      if (!mounted) return;
       setState(() {
         _capturedImages[index] = _CapturedImage(
           path: croppedFile.path,

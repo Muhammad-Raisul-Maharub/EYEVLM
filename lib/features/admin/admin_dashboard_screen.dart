@@ -394,7 +394,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: _getConfidenceColor(confidence).withOpacity(0.1),
+                            color: _getConfidenceColor(confidence).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -543,7 +543,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: color, size: 28),
@@ -597,7 +597,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor.withOpacity(0.1),
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(

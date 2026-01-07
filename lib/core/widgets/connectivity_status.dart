@@ -171,7 +171,7 @@ class _ConnectivityDotState extends State<ConnectivityDot> {
           color: _isOnline ? Colors.green : Colors.red,
           boxShadow: [
             BoxShadow(
-              color: (_isOnline ? Colors.green : Colors.red).withOpacity(0.4),
+              color: (_isOnline ? Colors.green : Colors.red).withValues(alpha: 0.4),
               blurRadius: 4,
               spreadRadius: 1,
             ),
