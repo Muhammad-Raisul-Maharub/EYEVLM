@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../../core/services/offline_sync_service.dart';
+import '../../../core/database_helper.dart';
 
 /// Repository class that handles the entire scan submission process.
 /// Uses EXISTING 'scans' table and 'eye-images' bucket.
@@ -34,20 +35,47 @@ class ScanRepository {
       throw Exception("Maximum 5 images allowed per scan");
     }
 
-    // Check connectivity and fall back to offline queue if needed
+    // ========== STEP 1: ALWAYS SAVE LOCALLY FIRST ==========
+    // This ensures data is immediately available in History, even offline
+    final String localScanId = '${user.id}_${DateTime.now().millisecondsSinceEpoch}';
+    
+    if (!kIsWeb) {
+      try {
+        await DatabaseHelper.instance.createScan({
+          'id': localScanId,
+          'user_id': user.id,
+          'image_paths': imagePaths,
+          'symptoms': formData['suspected_disease'],
+          'ai_prediction': 'Pending',
+          'confidence': 0.0,
+          'patient_age': formData['patient_age'],
+          'patient_gender': formData['patient_gender'],
+          'suspected_disease': formData['suspected_disease'],
+          'clinical_data': formData['clinical_data'] ?? {},
+          'is_synced': 0, // Will be updated after successful upload
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        debugPrint("✅ Scan saved locally first (ID: $localScanId)");
+      } catch (e) {
+        debugPrint("⚠️ Failed to save locally: $e");
+        // Continue anyway - try online upload
+      }
+    }
+
+    // ========== STEP 2: CHECK CONNECTIVITY ==========
     if (!kIsWeb) {
       final connectivityResult = await Connectivity().checkConnectivity();
       final isOnline = connectivityResult.any((r) => r != ConnectivityResult.none);
       
       if (!isOnline) {
-        debugPrint("📴 Offline detected - queuing scan locally");
+        debugPrint("📴 Offline - scan saved locally, will sync later");
+        // Queue for background sync
         await OfflineSyncService.instance.queueScan(
           imagePaths: imagePaths,
           formData: formData,
           attachments: attachments,
         );
-        debugPrint("✅ Scan queued for later sync");
-        return; // Exit early - will sync when online
+        return; // Exit early - data is saved locally, will sync when online
       }
     }
 
@@ -223,6 +251,16 @@ class ScanRepository {
       });
 
       debugPrint('✅ Scan record saved successfully with ${uploadedImageUrls.length} images!');
+      
+      // ========== STEP 4: MARK LOCAL SCAN AS SYNCED ==========
+      if (!kIsWeb) {
+        try {
+          await DatabaseHelper.instance.markAsSynced(localScanId);
+          debugPrint("✅ Local scan marked as synced");
+        } catch (e) {
+          debugPrint("⚠️ Failed to mark local scan as synced: $e");
+        }
+      }
     } catch (e) {
       debugPrint('❌ Error submitting scan: $e');
       rethrow;
