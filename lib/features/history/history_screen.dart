@@ -109,10 +109,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   // Robust Delete Function - Deletes image, attachments, and database record
-  Future<void> deleteScan(int scanId, String imageUrl) async {
+  Future<void> deleteScan(dynamic scanId, String imageUrl) async {
     // Optimistic Update: Remove from UI immediately
     setState(() {
-      _deletedIds.add(scanId); 
+      _deletedIds.add(scanId.toString()); 
       _isDeleting = true;
     }); 
 
@@ -176,7 +176,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       debugPrint("❌ Error during deletion: $e");
       if (mounted) {
         setState(() {
-          _deletedIds.remove(scanId);
+          _deletedIds.remove(scanId.toString());
         });
         AppNotifications.showError(context, 'Error: $e');
       }
@@ -187,7 +187,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
   }
 
-  void showDeleteConfirmation(int scanId, String imageUrl, String prediction) {
+  void showDeleteConfirmation(dynamic scanId, String imageUrl, String prediction) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
