@@ -404,6 +404,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       return const Scaffold(body: Center(child: Text("Please log in.")));
     }
 
+    // Listen for refresh triggers from ScanFlowScreen
+    ref.listen(historyRefreshProvider, (_, __) => _loadScans());
+
     return Scaffold(
       appBar: AppBar(
         title: _isSelectionMode 

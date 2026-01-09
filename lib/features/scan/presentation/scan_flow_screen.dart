@@ -602,7 +602,7 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
             label: const Text("View in History"),
             onPressed: () {
               // Trigger reload in HistoryScreen
-              ref.read(historyRefreshProvider.notifier).state++;
+              ref.read(historyRefreshProvider.notifier).trigger();
               Navigator.of(context).pop(); // Close dialog
               context.go('/history');
             },
