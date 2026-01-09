@@ -61,6 +61,31 @@ class ImageProcessor {
       );
       
       debugPrint("ImageProcessor: Cropped image size: ${cropped.width}x${cropped.height}");
+      
+      // ========== ELLIPTICAL MASK ==========
+      // Apply ellipse mask so only pixels INSIDE the oval are kept
+      // This matches the visual oval overlay the user sees in camera
+      final int cw = cropped.width;
+      final int ch = cropped.height;
+      final double a = cw / 2.0; // Semi-major axis (horizontal)
+      final double b = ch / 2.0; // Semi-minor axis (vertical)
+      
+      for (int py = 0; py < ch; py++) {
+        for (int px = 0; px < cw; px++) {
+          // Normalize coordinates to ellipse center
+          final double dx = px - a;
+          final double dy = py - b;
+          
+          // Check if point is outside ellipse using standard equation:
+          // (x/a)² + (y/b)² > 1 means outside
+          if ((dx * dx) / (a * a) + (dy * dy) / (b * b) > 1.0) {
+            // Outside ellipse - set to black (for JPEG compatibility)
+            cropped.setPixel(px, py, img.ColorRgb8(0, 0, 0));
+          }
+        }
+      }
+      
+      debugPrint("ImageProcessor: Applied elliptical mask to crop");
 
       // ========== UPSCALING ==========
       // Ensure specific minimum resolution for AI (e.g., 1024px)

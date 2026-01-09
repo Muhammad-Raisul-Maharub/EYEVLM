@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
@@ -192,16 +193,55 @@ class ScanRepository {
         if (token == null) {
           debugPrint("⚠️ No Auth Token found. Skipping AI Analysis.");
         } else {
-          final response = await http.post(
-            Uri.parse(backendUrl),
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": "Bearer $token",
-            },
-            body: inferencePayload,
-          );
+          // Retry mechanism with exponential backoff for Render cold starts
+          const int maxRetries = 3;
+          const Duration baseTimeout = Duration(seconds: 90); // Long timeout for Render cold start
+          
+          http.Response? response;
+          Exception? lastError;
+          
+          for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              debugPrint("🔄 AI Inference attempt $attempt/$maxRetries...");
+              
+              response = await http.post(
+                Uri.parse(backendUrl),
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": "Bearer $token",
+                },
+                body: inferencePayload,
+              ).timeout(baseTimeout);
+              
+              if (response.statusCode == 200) {
+                break; // Success - exit retry loop
+              } else if (response.statusCode >= 500) {
+                // Server error - retry
+                debugPrint("⚠️ Backend Error ${response.statusCode}, retrying...");
+                if (attempt < maxRetries) {
+                  await Future.delayed(Duration(seconds: attempt * 2)); // Exponential backoff
+                }
+              } else {
+                // Client error - don't retry
+                debugPrint("❌ Client Error: ${response.statusCode} - ${response.body}");
+                break;
+              }
+            } on TimeoutException {
+              lastError = TimeoutException('Request timed out');
+              debugPrint("⏱️ Timeout on attempt $attempt, retrying...");
+              if (attempt < maxRetries) {
+                await Future.delayed(Duration(seconds: attempt * 2));
+              }
+            } catch (e) {
+              lastError = e as Exception;
+              debugPrint("⚠️ Error on attempt $attempt: $e");
+              if (attempt < maxRetries) {
+                await Future.delayed(Duration(seconds: attempt * 2));
+              }
+            }
+          }
 
-          if (response.statusCode == 200) {
+          if (response != null && response.statusCode == 200) {
             final result = jsonDecode(response.body);
             prediction = result['predicted_class'] ?? 'Pending';
             confidenceMap = result['confidence'];
@@ -212,7 +252,9 @@ class ScanRepository {
             }
             
             debugPrint("✅ AI Analysis Complete: $prediction ($confidence)");
-          } else {
+          } else if (lastError != null) {
+            debugPrint("❌ All retries failed: $lastError");
+          } else if (response != null) {
             debugPrint("⚠️ Backend Error: ${response.statusCode} - ${response.body}");
           }
         }

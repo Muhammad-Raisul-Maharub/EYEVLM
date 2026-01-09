@@ -20,9 +20,10 @@ class AdminService {
     bool ascending = false,
   }) async {
     try {
+      // Note: Removed join to 'profiles' table as it may not exist or have RLS issues
       var query = _supabase
           .from('scans')
-          .select('*, profiles:user_id(email)')
+          .select('*')
           .limit(limit)
           .range(offset, offset + limit - 1);
       
@@ -76,7 +77,7 @@ class AdminService {
     try {
       final response = await _supabase
           .from('scans')
-          .select('*, profiles:user_id(email)')
+          .select('*')
           .eq('id', scanId)
           .single();
       return response;

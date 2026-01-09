@@ -302,7 +302,7 @@ class _ClinicalDataFormState extends State<ClinicalDataForm> {
     }
   }
 
-  void _submit() async {
+  Future<void> _submit() async {
     // Validate age
     final age = int.tryParse(_ageController.text.trim());
     if (age == null || age <= 0 || age > 120) {
@@ -334,12 +334,18 @@ class _ClinicalDataFormState extends State<ClinicalDataForm> {
     };
 
     try {
-      await Future.value(widget.onSubmit({
+      // Properly await the async callback (was using Future.value which didn't await)
+      await widget.onSubmit({
         'patient_age': age,
         'patient_gender': _gender,
         'suspected_disease': _suspectedDisease,
         'clinical_data': clinicalJson, 
-      }, _attachedFiles));
+      }, _attachedFiles);
+    } catch (e) {
+      // Show error notification if submission fails
+      if (mounted) {
+        AppNotifications.showError(context, "Submission failed: $e");
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

@@ -252,9 +252,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         const SizedBox(height: 4),
 
-        // Version 1.0.0
+        // Version - matches pubspec.yaml
         Text(
-          "Version 1.0.0",
+          "Version 1.4.9",
           style: GoogleFonts.inter(
             fontSize: 12, 
             color: Colors.grey[400],

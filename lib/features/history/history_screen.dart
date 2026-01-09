@@ -60,7 +60,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     super.dispose();
   }
 
-  /// Load scans from local database (offline-first) or Supabase for admins
+  /// Load scans from local database (offline-first) AND Supabase for complete data
   Future<void> _loadScans() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     debugPrint("🔄 HistoryScreen: Loading scans for User ID: $userId");
@@ -88,9 +88,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           });
         }
       } else {
-        // Mobile: Use local database (offline-first)
+        // Mobile: Load from local DB first (instant), then sync from Supabase
         final localScans = await DatabaseHelper.instance.getAllScans(userId: userId);
         
+        // Show local scans immediately for responsive UI
         if (mounted) {
           setState(() {
             _scans = localScans;
@@ -98,6 +99,30 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           });
         }
         debugPrint("✅ Loaded ${localScans.length} scans from local database");
+        
+        // Also fetch from Supabase and merge (remote data takes precedence)
+        try {
+          final remoteScans = await Supabase.instance.client
+              .from('scans')
+              .select()
+              .eq('user_id', userId)
+              .order('created_at', ascending: false);
+          
+          final remoteList = List<Map<String, dynamic>>.from(remoteScans);
+          debugPrint("📡 Fetched ${remoteList.length} scans from Supabase");
+          
+          // Merge: Use remote data if available (has actual predictions)
+          // Keep local-only scans that haven't synced yet
+          final merged = _mergeScans(localScans, remoteList);
+          
+          if (mounted) {
+            setState(() => _scans = merged);
+          }
+          debugPrint("🔄 Merged to ${merged.length} total scans");
+        } catch (e) {
+          debugPrint("⚠️ Could not sync from Supabase: $e");
+          // Keep showing local scans - that's fine for offline mode
+        }
       }
     } catch (e) {
       debugPrint("❌ Error loading scans: $e");
@@ -106,6 +131,50 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         AppNotifications.showError(context, 'Error loading history: $e');
       }
     }
+  }
+  
+  /// Merge local and remote scans, preferring remote data with actual predictions
+  List<Map<String, dynamic>> _mergeScans(
+    List<Map<String, dynamic>> localScans,
+    List<Map<String, dynamic>> remoteScans,
+  ) {
+    // Create a map of remote scans by image_url for quick lookup
+    final Map<String, Map<String, dynamic>> remoteByUrl = {};
+    for (final scan in remoteScans) {
+      final url = scan['image_url']?.toString() ?? '';
+      if (url.isNotEmpty) {
+        remoteByUrl[url] = scan;
+      }
+    }
+    
+    // Build merged list
+    final List<Map<String, dynamic>> merged = [];
+    final Set<String> addedUrls = {};
+    
+    // Add all remote scans first (they have actual server data)
+    for (final scan in remoteScans) {
+      merged.add(scan);
+      final url = scan['image_url']?.toString() ?? '';
+      if (url.isNotEmpty) addedUrls.add(url);
+    }
+    
+    // Add local-only scans (not yet synced to server)
+    for (final scan in localScans) {
+      final url = scan['image_url']?.toString() ?? '';
+      // Check if this is a local file path (not synced yet)
+      if (url.startsWith('/') && !addedUrls.contains(url)) {
+        merged.add(scan);
+      }
+    }
+    
+    // Sort by created_at descending
+    merged.sort((a, b) {
+      final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime(1970);
+      final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime(1970);
+      return bDate.compareTo(aDate);
+    });
+    
+    return merged;
   }
 
   // Robust Delete Function - Deletes image, attachments, and database record

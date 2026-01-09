@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 // Conditional import for web
 import 'pdf_download_stub.dart'
     if (dart.library.html) 'pdf_download_web.dart' as pdf_download;
@@ -148,13 +151,56 @@ class PdfService {
     );
   }
 
-  /// Downloads PDF - works on both web and native platforms
-  Future<void> downloadPdf(Uint8List bytes, String filename) async {
+  /// Downloads PDF - saves to Downloads folder on Android, share sheet on iOS
+  /// Returns the file path if saved to storage, null if shared via sheet
+  Future<String?> downloadPdf(Uint8List bytes, String filename) async {
     if (kIsWeb) {
       pdf_download.downloadPdfWeb(bytes, filename);
-    } else {
-      await Printing.sharePdf(bytes: bytes, filename: filename);
+      return null;
     }
+    
+    // On Android, try to save directly to Downloads folder
+    if (Platform.isAndroid) {
+      try {
+        // Check/request storage permission for older Android versions
+        PermissionStatus status;
+        if (await Permission.manageExternalStorage.isGranted) {
+          status = PermissionStatus.granted;
+        } else {
+          // Try regular storage permission first (for Android < 11)
+          status = await Permission.storage.request();
+          if (!status.isGranted) {
+            // For Android 11+, try manage external storage
+            status = await Permission.manageExternalStorage.request();
+          }
+        }
+        
+        if (status.isGranted || await Permission.storage.isGranted) {
+          // Save to Downloads folder
+          final downloadsDir = Directory('/storage/emulated/0/Download');
+          if (await downloadsDir.exists()) {
+            final file = File('${downloadsDir.path}/$filename');
+            await file.writeAsBytes(bytes);
+            debugPrint("✅ PDF saved to: ${file.path}");
+            return file.path;
+          }
+        }
+        
+        // Fallback: Save to app documents directory
+        final appDir = await getApplicationDocumentsDirectory();
+        final file = File('${appDir.path}/$filename');
+        await file.writeAsBytes(bytes);
+        debugPrint("✅ PDF saved to app folder: ${file.path}");
+        return file.path;
+      } catch (e) {
+        debugPrint("⚠️ Could not save PDF: $e");
+        // Fallback to share sheet
+      }
+    }
+    
+    // Fallback for iOS or if storage fails: use share sheet
+    await Printing.sharePdf(bytes: bytes, filename: filename);
+    return null;
   }
 
   /// Convenience method to generate and download the report.

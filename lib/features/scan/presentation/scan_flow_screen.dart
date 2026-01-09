@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -52,11 +53,14 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
               ? _buildCaptureOptions()
               : _buildImageGallery(),
       floatingActionButton: _capturedImages.isNotEmpty && _capturedImages.length < maxImages
-          ? FloatingActionButton.extended(
-              onPressed: _showAddMoreOptions,
-              backgroundColor: AppColors.lightPrimary,
-              icon: const Icon(Icons.add_a_photo),
-              label: const Text("Add More"),
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 60), // Move up to avoid collision with bottom buttons
+              child: FloatingActionButton.extended(
+                onPressed: _showAddMoreOptions,
+                backgroundColor: AppColors.lightPrimary,
+                icon: const Icon(Icons.add_a_photo),
+                label: const Text("Add More"),
+              ),
             )
           : null,
     );
@@ -548,11 +552,15 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
     );
 
     try {
+      // Add timeout protection to prevent infinite waiting
       await ScanRepository().submitScan(
         imagePaths: imagePaths,
         formData: formData,
         attachments: attachments,
         imageBytesList: imageBytesList,
+      ).timeout(
+        const Duration(seconds: 60),
+        onTimeout: () => throw TimeoutException('Submission timed out. The scan was saved locally and will sync when connection improves.'),
       );
 
       if (mounted) {
@@ -562,7 +570,7 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
       }
     } catch (e) {
       if (mounted) {
-        Navigator.of(context).pop(); // Close loading dialog
+        Navigator.of(context).pop(); // ALWAYS close loading dialog
         AppNotifications.showError(context, "Error: $e");
       }
     } finally {
