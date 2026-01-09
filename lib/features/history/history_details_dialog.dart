@@ -191,13 +191,13 @@ void showHistoryDetails(BuildContext context, Map<String, dynamic> scan, Functio
                             foregroundColor: Colors.grey[700],
                             alignment: Alignment.center,
                           ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.download, size: 20),
-                              SizedBox(width: 6),
-                              Flexible(child: Text("Download Report", textAlign: TextAlign.center, overflow: TextOverflow.ellipsis)),
-                            ],
+                          icon: const Icon(Icons.download, size: 20),
+                          label: const Flexible(
+                            child: Text(
+                              "Download Report", 
+                              textAlign: TextAlign.center, 
+                              overflow: TextOverflow.ellipsis
+                            ),
                           ),
                         ),
                       ),

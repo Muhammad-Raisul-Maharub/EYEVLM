@@ -64,7 +64,7 @@ class ImageProcessor {
            cropped, 
            width: newWidth, 
            height: newHeight, 
-           interpolation: img.Interpolation.bicubic
+           interpolation: img.Interpolation.linear
          );
          debugPrint("ImageProcessor: Upscaled to ${cropped.width}x${cropped.height}");
       }
