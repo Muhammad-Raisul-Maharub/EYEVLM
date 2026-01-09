@@ -184,13 +184,20 @@ void showHistoryDetails(BuildContext context, Map<String, dynamic> scan, Functio
                                }
                             }
                           },
-                          icon: const Icon(Icons.download),
-                          label: const Text("Download Report"),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                             side: BorderSide(color: Colors.grey.shade300),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             foregroundColor: Colors.grey[700],
+                            alignment: Alignment.center,
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.download, size: 20),
+                              SizedBox(width: 6),
+                              Flexible(child: Text("Download Report", textAlign: TextAlign.center, overflow: TextOverflow.ellipsis)),
+                            ],
                           ),
                         ),
                       ),

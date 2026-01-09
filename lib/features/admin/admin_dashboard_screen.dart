@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/utils/app_notifications.dart';
 import '../../core/providers/connectivity_provider.dart';
 import '../auth/auth_service.dart';
@@ -31,25 +32,46 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   
   final TextEditingController _searchController = TextEditingController();
 
+  RealtimeChannel? _subscription;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadData();
+    _setupRealtimeSubscription();
+  }
+
+  void _setupRealtimeSubscription() {
+    _subscription = Supabase.instance.client
+        .channel('admin_dashboard')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'scans',
+          callback: (payload) {
+            // Reload silently on any change (insert/update/delete)
+            if (mounted) _loadData(silent: true);
+          },
+        )
+        .subscribe();
   }
 
   @override
   void dispose() {
+    _subscription?.unsubscribe();
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  Future<void> _loadData({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       final adminService = ref.read(adminServiceProvider);

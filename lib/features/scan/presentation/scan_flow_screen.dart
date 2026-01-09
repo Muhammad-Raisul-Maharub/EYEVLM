@@ -12,21 +12,23 @@ import 'package:eyevlm_app/features/scan/data/scan_repository.dart';
 import 'package:eyevlm_app/core/theme/app_tokens.dart';
 import 'package:eyevlm_app/core/utils/app_notifications.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:eyevlm_app/core/services/pdf_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:eyevlm_app/core/providers/refresh_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// Multi-image scan flow that allows:
 /// 1. Capture multiple images (max 5)
 /// 2. Optional manual cropping per image
 /// 3. Preview gallery before clinical form
 /// 4. Instant navigation
-class ScanFlowScreen extends StatefulWidget {
+class ScanFlowScreen extends ConsumerStatefulWidget {
   const ScanFlowScreen({super.key});
 
   @override
-  State<ScanFlowScreen> createState() => _ScanFlowScreenState();
+  ConsumerState<ScanFlowScreen> createState() => _ScanFlowScreenState();
 }
 
-class _ScanFlowScreenState extends State<ScanFlowScreen> {
+class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
   // List of captured images with their paths and bytes
   final List<_CapturedImage> _capturedImages = [];
   static const int maxImages = 5;
@@ -54,7 +56,7 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
               : _buildImageGallery(),
       floatingActionButton: _capturedImages.isNotEmpty && _capturedImages.length < maxImages
           ? Padding(
-              padding: const EdgeInsets.only(bottom: 60), // Move up to avoid collision with bottom buttons
+              padding: const EdgeInsets.only(bottom: 65), // Increased to 65px as requested
               child: FloatingActionButton.extended(
                 onPressed: _showAddMoreOptions,
                 backgroundColor: AppColors.lightPrimary,
@@ -594,53 +596,13 @@ class _ScanFlowScreenState extends State<ScanFlowScreen> {
         ),
         content: Text("${imagePaths.length} image(s) uploaded.\nThe AI analysis is being processed."),
         actions: [
-          TextButton.icon(
-            icon: const Icon(Icons.picture_as_pdf),
-            label: const Text("Download Report"),
-            onPressed: () async {
-              try {
-                final pdfService = PdfService();
-                
-                final clinicalDataRaw = formData['clinical_data'];
-                final clinicalData = clinicalDataRaw is Map 
-                    ? Map<String, dynamic>.from(clinicalDataRaw)
-                    : <String, dynamic>{};
-                
-                final scanData = <String, dynamic>{
-                  'id': 'NEW-${DateTime.now().millisecondsSinceEpoch}',
-                  'created_at': DateTime.now().toIso8601String(),
-                  'prediction': 'Pending',
-                  'confidence': 0.0,
-                  'patient_age': formData['patient_age'],
-                  'patient_gender': formData['patient_gender'],
-                  'suspected_disease': formData['suspected_disease'],
-                  'clinical_data': clinicalData,
-                };
-                
-                final pdfBytes = await pdfService.generateScanReport(
-                  scanData: scanData,
-                  scanImageBytes: imageBytesList.isNotEmpty ? imageBytesList.first : await File(imagePaths.first).readAsBytes(),
-                );
-                await pdfService.downloadPdf(pdfBytes, 'EyeVLM_Report_New.pdf');
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Report downloaded!'), backgroundColor: Colors.green),
-                  );
-                }
-              } catch (e) {
-                debugPrint('PDF Download Error: $e');
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-          ),
+          // Download button removed as per user request
           ElevatedButton.icon(
             icon: const Icon(Icons.history),
             label: const Text("View in History"),
             onPressed: () {
+              // Trigger reload in HistoryScreen
+              ref.read(historyRefreshProvider.notifier).state++;
               Navigator.of(context).pop(); // Close dialog
               context.go('/history');
             },

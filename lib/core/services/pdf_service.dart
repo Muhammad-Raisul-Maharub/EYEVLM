@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 // Conditional import for web
 import 'pdf_download_stub.dart'
     if (dart.library.html) 'pdf_download_web.dart' as pdf_download;
@@ -151,61 +152,70 @@ class PdfService {
     );
   }
 
-  /// Downloads PDF - saves to Downloads folder on Android, share sheet on iOS
-  /// Returns the file path if saved to storage, null if shared via sheet
-  Future<String?> downloadPdf(Uint8List bytes, String filename) async {
+  /// Saves PDF to local storage (Downloads or AppDocs) returns path
+  Future<String?> savePdf(Uint8List bytes, String filename) async {
     if (kIsWeb) {
       pdf_download.downloadPdfWeb(bytes, filename);
       return null;
     }
     
-    // On Android, try to save directly to Downloads folder
+    File? fileToSave;
+
+    // 1. Save Logic
     if (Platform.isAndroid) {
       try {
-        // Check/request storage permission for older Android versions
-        PermissionStatus status;
-        if (await Permission.manageExternalStorage.isGranted) {
-          status = PermissionStatus.granted;
+        final downloadsDir = Directory('/storage/emulated/0/Download');
+        if (await downloadsDir.exists()) {
+          fileToSave = File('${downloadsDir.path}/$filename');
         } else {
-          // Try regular storage permission first (for Android < 11)
-          status = await Permission.storage.request();
-          if (!status.isGranted) {
-            // For Android 11+, try manage external storage
-            status = await Permission.manageExternalStorage.request();
-          }
+           final extDir = await getExternalStorageDirectory();
+           if (extDir != null) {
+              fileToSave = File('${extDir.path}/$filename');
+           }
         }
-        
-        if (status.isGranted || await Permission.storage.isGranted) {
-          // Save to Downloads folder
-          final downloadsDir = Directory('/storage/emulated/0/Download');
-          if (await downloadsDir.exists()) {
-            final file = File('${downloadsDir.path}/$filename');
-            await file.writeAsBytes(bytes);
-            debugPrint("✅ PDF saved to: ${file.path}");
-            return file.path;
-          }
-        }
-        
-        // Fallback: Save to app documents directory
-        final appDir = await getApplicationDocumentsDirectory();
-        final file = File('${appDir.path}/$filename');
-        await file.writeAsBytes(bytes);
-        debugPrint("✅ PDF saved to app folder: ${file.path}");
-        return file.path;
-      } catch (e) {
-        debugPrint("⚠️ Could not save PDF: $e");
-        // Fallback to share sheet
-      }
+      } catch (e) { /* Ignore */ }
     }
-    
-    // Fallback for iOS or if storage fails: use share sheet
-    await Printing.sharePdf(bytes: bytes, filename: filename);
+
+    if (fileToSave == null) {
+      final appDir = await getApplicationDocumentsDirectory();
+      fileToSave = File('${appDir.path}/$filename');
+    }
+
+    await fileToSave.writeAsBytes(bytes);
+    debugPrint("✅ PDF saved to: ${fileToSave.path}");
+    return fileToSave.path;
+  }
+
+  /// Downloads PDF to local storage AND shows share sheet
+  Future<String?> downloadPdf(Uint8List bytes, String filename) async {
+    String? path;
+    try {
+      path = await savePdf(bytes, filename);
+    } catch (e) {
+      debugPrint("❌ Save error: $e");
+      await Printing.sharePdf(bytes: bytes, filename: filename);
+      return null;
+    }
+
+    if (path != null) {
+      // Share Logic
+      try {
+        await Share.shareXFiles(
+          [XFile(path)], 
+          text: 'Here is the EyeVLM Scan Report: $filename',
+        );
+      } catch (e) {
+        debugPrint("⚠️ Share Error (fallback to printing): $e");
+        await Printing.sharePdf(bytes: bytes, filename: filename);
+      }
+      return path;
+    }
     return null;
   }
 
   /// Convenience method to generate and download the report.
-  /// Fetches the scan image from Supabase Storage if available.
-  Future<void> generateAndShareReport(Map<String, dynamic> scan) async {
+  /// Generates report file and returns the path (without sharing)
+  Future<String?> generateReportFile(Map<String, dynamic> scan) async {
     Uint8List? imageBytes;
     
     // Attempt to fetch image if URL exists
@@ -228,6 +238,14 @@ class PdfService {
     
     final bytes = await generateScanReport(scanData: scan, scanImageBytes: imageBytes);
     final name = 'EyeVLM_Report_${(scan['id'].toString().length > 8) ? scan['id'].toString().substring(0, 8) : scan['id']}.pdf';
-    await downloadPdf(bytes, name);
+    return await savePdf(bytes, name);
+  }
+
+  /// Convenience method to generate and download/share the report.
+  Future<void> generateAndShareReport(Map<String, dynamic> scan) async {
+    final path = await generateReportFile(scan);
+    if (path != null) {
+       await Share.shareXFiles([XFile(path)], text: 'EyeVLM Report'); 
+    }
   }
 }

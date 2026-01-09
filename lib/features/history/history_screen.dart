@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // Added for animations
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
@@ -425,14 +426,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               onPressed: _selectedScanIds.isEmpty ? null : _downloadSelectedReports,
             ),
           ] else ...[
-            if (!kIsWeb) // CSV export only on mobile (file access)
-              IconButton(
-                icon: _isExporting 
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.download),
-                tooltip: 'Export to CSV',
-                onPressed: _isExporting ? null : _exportToCSV,
-              ),
+             // Replaced CSV Export with Selection Mode Toggle as per request
+             IconButton(
+                icon: const Icon(Icons.checklist_rtl),
+                tooltip: 'Select Reports',
+                onPressed: () {
+                   setState(() => _isSelectionMode = true);
+                },
+             ),
           ],
         ],
       ),
@@ -714,7 +715,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     setState(() => _isDownloading = true);
     
     try {
-      // Fetch the selected scans from the current stream data
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId == null) return;
       
@@ -729,25 +729,40 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       if (!mounted) return;
       AppNotifications.showInfo(context, "Generating ${scans.length} reports...");
       
+      List<XFile> filesToShare = [];
+      final pdfService = PdfService();
+
       int successCount = 0;
       for (final scan in scans) {
         try {
-          await PdfService().generateAndShareReport(scan);
-          successCount++;
+          final path = await pdfService.generateReportFile(scan);
+          if (path != null) {
+            filesToShare.add(XFile(path));
+            successCount++;
+          }
         } catch (e) {
-          debugPrint("Failed to download report ${scan['id']}: $e");
+          debugPrint("Failed to generate report ${scan['id']}: $e");
         }
       }
       
       if (mounted) {
-        AppNotifications.showSuccess(context, "Downloaded $successCount of ${scans.length} reports");
         setState(() {
           _isSelectionMode = false;
           _selectedScanIds.clear();
         });
+
+        if (filesToShare.isNotEmpty) {
+           await Share.shareXFiles(
+             filesToShare, 
+             text: 'EyeVLM Batch Export ($successCount Reports)'
+           );
+           AppNotifications.showSuccess(context, "Reports generated!");
+        } else {
+           AppNotifications.showError(context, "No reports could be generated.");
+        }
       }
     } catch (e) {
-      if (mounted) AppNotifications.showError(context, "Failed to download reports: $e");
+      if (mounted) AppNotifications.showError(context, "Failed: $e");
     } finally {
       if (mounted) setState(() => _isDownloading = false);
     }

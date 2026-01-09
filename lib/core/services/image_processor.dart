@@ -20,80 +20,33 @@ class ImageProcessor {
   /// Returns a new File with the cropped, compressed image.
   static Future<File> cropToOverlay(File rawImage, {int quality = 100}) async {
     try {
+      // 1. Read the raw bytes from the camera file
       final bytes = await rawImage.readAsBytes();
+      
+      // 2. Decode the image (Handling potential format errors)
       img.Image? original = img.decodeImage(bytes);
-      
-      if (original == null) {
-        debugPrint("ImageProcessor: Failed to decode image, returning original");
-        return rawImage; // Fallback to original
-      }
-      
-      debugPrint("ImageProcessor: Original image size: ${original.width}x${original.height}");
-      
-      // ========== ROTATION HANDLING ==========
-      // Mobile cameras often save landscape-oriented images even in portrait mode
-      // If width > height, rotate 90 degrees to ensure portrait orientation
+      if (original == null) throw Exception("Failed to decode camera image");
+
+      // 3. Fix Orientation (Crucial for Mobile)
+      // Most camera sensors (especially on older Androids) capture in Landscape natively.
+      // If the image is wider than it is tall, we rotate it 90 degrees to match the Portrait UI.
       if (original.width > original.height) {
-        debugPrint("ImageProcessor: Rotating landscape image to portrait");
         original = img.copyRotate(original, angle: 90);
-        debugPrint("ImageProcessor: After rotation: ${original.width}x${original.height}");
       }
+
+      // 4. Calculate the Crop Area (The Math)
+      // We rely on the Single Source of Truth: CameraOverlayConfig.
+      // If the UI oval is 85% of screen width, we take 85% of the image width.
+      int cropW = (original.width * CameraOverlayConfig.widthRatio).toInt();
+      int cropH = (original.height * CameraOverlayConfig.heightRatio).toInt();
       
-      // Get the crop rect based on the IMAGE dimensions
-      final imageSize = Size(original.width.toDouble(), original.height.toDouble());
-      final cropRect = CameraOverlayConfig.getCropRect(imageSize);
-      
-      // Validate crop bounds
-      final x = cropRect.left.toInt().clamp(0, original.width - 1);
-      final y = cropRect.top.toInt().clamp(0, original.height - 1);
-      final w = cropRect.width.toInt().clamp(1, original.width - x);
-      final h = cropRect.height.toInt().clamp(1, original.height - y);
-      
-      debugPrint("ImageProcessor: Cropping to x:$x, y:$y, w:$w, h:$h");
-      
-      // Perform the crop
+      // Calculate center coordinates to place the crop box perfectly
+      int cropX = (original.width - cropW) ~/ 2;
+      int cropY = (original.height - cropH) ~/ 2;
+
+      // 5. Perform the Crop (In-Memory)
       img.Image cropped = img.copyCrop(
         original, 
-        x: x, 
-        y: y, 
-        width: w, 
-        height: h,
-      );
-      
-      debugPrint("ImageProcessor: Cropped image size: ${cropped.width}x${cropped.height}");
-      
-      // ========== ELLIPTICAL MASK ==========
-      // Apply ellipse mask so only pixels INSIDE the oval are kept
-      // This matches the visual oval overlay the user sees in camera
-      final int cw = cropped.width;
-      final int ch = cropped.height;
-      final double a = cw / 2.0; // Semi-major axis (horizontal)
-      final double b = ch / 2.0; // Semi-minor axis (vertical)
-      
-      for (int py = 0; py < ch; py++) {
-        for (int px = 0; px < cw; px++) {
-          // Normalize coordinates to ellipse center
-          final double dx = px - a;
-          final double dy = py - b;
-          
-          // Check if point is outside ellipse using standard equation:
-          // (x/a)² + (y/b)² > 1 means outside
-          if ((dx * dx) / (a * a) + (dy * dy) / (b * b) > 1.0) {
-            // Outside ellipse - set to black (for JPEG compatibility)
-            cropped.setPixel(px, py, img.ColorRgb8(0, 0, 0));
-          }
-        }
-      }
-      
-      debugPrint("ImageProcessor: Applied elliptical mask to crop");
-
-      // ========== UPSCALING ==========
-      // Ensure specific minimum resolution for AI (e.g., 1024px)
-      // This preserves detail even when cropping small eyes
-      const int targetMinSize = 1024;
-      if (cropped.width < targetMinSize || cropped.height < targetMinSize) {
-        debugPrint("ImageProcessor: Upscaling to target minimum $targetMinSize px");
-        
         // Calculate scale factor to preserve aspect ratio
         double scale = targetMinSize / (cropped.width < cropped.height ? cropped.width : cropped.height);
         

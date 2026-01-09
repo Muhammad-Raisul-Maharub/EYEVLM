@@ -1,12 +1,9 @@
-import 'package:flutter/foundation.dart';
-import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:eyevlm_app/core/theme/app_tokens.dart';
-import 'package:eyevlm_app/core/config/camera_overlay_config.dart';
+import 'dart:io';
+import '../../../../core/config/camera_overlay_config.dart';
+import '../../../../core/services/image_processor.dart';
+import 'widgets/eye_overlay_painter.dart';
 
 class SmartCameraScreen extends StatefulWidget {
   final Function(String path) onImageCaptured;
@@ -14,406 +11,119 @@ class SmartCameraScreen extends StatefulWidget {
   const SmartCameraScreen({super.key, required this.onImageCaptured});
 
   @override
-  State<SmartCameraScreen> createState() => _SmartCameraScreenState();
+  _SmartCameraScreenState createState() => _SmartCameraScreenState();
 }
 
 class _SmartCameraScreenState extends State<SmartCameraScreen> {
   CameraController? _controller;
-  List<CameraDescription> _cameras = [];
-  
-  final FaceDetector _faceDetector = FaceDetector(
-    options: FaceDetectorOptions(
-      enableClassification: true, // Needed for Eye Open probability
-      enableTracking: true,
-      performanceMode: FaceDetectorMode.fast,
-    ),
-  );
-
+  bool _isFlashOn = false;
   bool _isProcessing = false;
-  bool _isCameraInitialized = false;
-  bool _isCapturing = false;
-  String _statusMessage = "Initializing...";
-  Color _statusColor = Colors.red;
-  
-  // Logic State
-  bool _eyesOpen = false;
-  bool _faceCentered = false;
-  int _goodFramesCount = 0; // To track "steadiness" (~10 frames per second)
-  static const int _captureThreshold = 30; // ~3 seconds of steady frames
+  final ImageProcessor _processor = ImageProcessor();
 
   @override
   void initState() {
     super.initState();
-    _initializeCamera();
+    _initCamera();
   }
 
-  Future<void> _initializeCamera() async {
-    // Request camera permission
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      _updateStatus("Camera permission denied", Colors.red);
+  Future<void> _initCamera() async {
+    final cameras = await availableCameras();
+    
+    // Prefer Back Camera
+    final camera = cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+
+    // SAFETY MECHANISM: Try High Res, Fallback to Medium if it fails
+    for (final preset in [ResolutionPreset.veryHigh, ResolutionPreset.high, ResolutionPreset.medium]) {
+      try {
+        _controller = CameraController(
+          camera,
+          preset, 
+          enableAudio: false,
+          imageFormatGroup: ImageFormatGroup.jpeg,
+        );
+        
+        await _controller!.initialize();
+        break; // It worked! Stop trying.
+      } catch (e) {
+        debugPrint("Resolution $preset failed: $e");
+        continue; // Try the next lower resolution
+      }
+    }
+    
+    if (_controller == null || !_controller!.value.isInitialized) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Camera Error: Could not initialize")));
+      }
       return;
     }
 
     try {
-      _cameras = await availableCameras();
-      if (_cameras.isEmpty) {
-        _updateStatus("No cameras available", Colors.red);
-        return;
-      }
-
-      // Find the back camera (higher res for medical imaging)
-      final camera = _cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => _cameras.first,
-      );
-
-      _controller = CameraController(
-        camera,
-        ResolutionPreset.max, // Max Res for Best Details
-        enableAudio: false,
-        imageFormatGroup: kIsWeb || Platform.isAndroid 
-            ? ImageFormatGroup.nv21 
-            : ImageFormatGroup.bgra8888,
-      );
-
-      await _controller!.initialize();
-      if (!mounted) return;
-
-      setState(() {
-        _isCameraInitialized = true;
-      });
-
-      // Start the Image Stream for ML Analysis
-      await _controller!.startImageStream(_processCameraImage);
-      _updateStatus("Position your eye in the frame", Colors.orange);
-    } on CameraException catch (e) {
-      debugPrint("Camera error: ${e.code} - ${e.description}");
-      String message = "Camera error: ${e.description}";
-      if (e.code == 'cameraNotReadable' || e.code == 'CameraAccessDenied') {
-         message = "Camera is busy or access denied. Please close other apps using the camera and refresh.";
-      }
-      _updateStatus(message, Colors.red);
-    } catch (e) {
-      debugPrint("Camera initialization error: $e");
-      _updateStatus("Camera error: $e", Colors.red);
-    }
-  }
-
-  Future<void> _processCameraImage(CameraImage image) async {
-    if (_isProcessing || _isCapturing) return; // Drop frames if busy
-    _isProcessing = true;
-
-    try {
-      final inputImage = _inputImageFromCameraImage(image);
-      if (inputImage == null) {
-        _isProcessing = false;
-        return;
-      }
-
-      final faces = await _faceDetector.processImage(inputImage);
-
-      if (!mounted) return;
-
-      if (faces.isEmpty) {
-        _updateStatus("No eye detected - Position your eye", Colors.red);
-        _resetStability();
-      } else {
-        // We only care about the biggest face (closest to camera)
-        final face = faces.first;
-        _validateFace(face, image.width.toDouble(), image.height.toDouble());
-      }
-    } catch (e) {
-      debugPrint("Error processing face: $e");
-    } finally {
-      _isProcessing = false;
-    }
-  }
-
-  void _validateFace(Face face, double imgWidth, double imgHeight) {
-    // 1. Check Eyes Open (Probability 0.0 to 1.0)
-    final double leftOpen = face.leftEyeOpenProbability ?? 0.0;
-    final double rightOpen = face.rightEyeOpenProbability ?? 0.0;
+      await _controller!.setFocusMode(FocusMode.auto);
+    } catch (_) {}
     
-    // Threshold: 0.4+ means eyes are reasonably open
-    bool eyesOpen = (leftOpen > 0.4 || rightOpen > 0.4);
-
-    // 2. Check Face is Centered (within middle 60% of frame)
-    final boundingBox = face.boundingBox;
-    double faceWidth = boundingBox.width;
-    
-    // Check if face is large enough (at least 15% of image width)
-    bool faceLargeEnough = faceWidth > (imgWidth * 0.15);
-    
-    // Check if face is centered
-    double centerX = boundingBox.center.dx;
-    double centerY = boundingBox.center.dy;
-    bool centeredX = centerX > imgWidth * 0.2 && centerX < imgWidth * 0.8;
-    bool centeredY = centerY > imgHeight * 0.2 && centerY < imgHeight * 0.8;
-    bool centered = centeredX && centeredY && faceLargeEnough;
-
-    // 3. Update State
-    if (mounted) {
-      setState(() {
-        _eyesOpen = eyesOpen;
-        _faceCentered = centered;
-      });
-    }
-
-    if (!faceLargeEnough) {
-      _updateStatus("Move closer to the camera", Colors.orange);
-      _resetStability();
-    } else if (!eyesOpen) {
-      _updateStatus("Open your eye wider!", Colors.orange);
-      _resetStability();
-    } else if (!centered) {
-      _updateStatus("Center your eye in the frame", Colors.orange);
-      _resetStability();
-    } else {
-      // ALL CONDITIONS MET!
-      _goodFramesCount++;
-      
-      // Calculate seconds remaining for visual countdown
-      final framesRemaining = _captureThreshold - _goodFramesCount;
-      final secondsRemaining = (framesRemaining / 10).ceil(); // ~10fps
-      
-      if (secondsRemaining > 0) {
-        _updateStatus("Hold steady... $secondsRemaining", Colors.green.shade400);
-      } else {
-        _updateStatus("Perfect! Capturing...", Colors.green);
-      }
-
-      // If good for ~3 seconds (30 frames), auto-capture
-      if (_goodFramesCount >= _captureThreshold && !_isCapturing) {
-        _takePicture();
-      }
-    }
+    if (mounted) setState(() {});
   }
 
-  void _resetStability() {
-    _goodFramesCount = 0;
-  }
-
-  void _updateStatus(String msg, Color color) {
-    if (mounted && (_statusMessage != msg || _statusColor != color)) {
-      setState(() {
-        _statusMessage = msg;
-        _statusColor = color;
-      });
-    }
-  }
-
-
-  Future<void> _takePicture() async {
-    if (!_isCameraInitialized || _isCapturing) return;
+  Future<void> _toggleFlash() async {
+    if (_controller == null) return;
     
-    setState(() => _isCapturing = true);
-    _updateStatus("Capturing high-res image...", Colors.green);
+    setState(() => _isFlashOn = !_isFlashOn);
     
     try {
-      // Stop stream first to free up camera for high-res capture
-      await _controller!.stopImageStream();
-      
-      final XFile file = await _controller!.takePicture();
-      
-      if (mounted) {
-        // Show preview dialog with Retake/Continue options
-        final shouldContinue = await _showCapturePreview(file.path);
-        
-        if (shouldContinue == true) {
-          // User confirmed - proceed to clinical form
-          widget.onImageCaptured(file.path);
-        } else {
-          // User wants to retake - restart stream
-          if (_controller != null && _controller!.value.isInitialized) {
-            await _controller!.startImageStream(_processCameraImage);
-          }
-          _updateStatus("Position your eye in the frame", Colors.orange);
-          _resetStability();
-        }
-      }
+      await _controller!.setFlashMode(
+        _isFlashOn ? FlashMode.torch : FlashMode.off
+      );
     } catch (e) {
-      debugPrint("Error capturing: $e");
-      _updateStatus("Capture failed. Try again.", Colors.red);
-      // Restart stream if capture failed
-      if (_controller != null && _controller!.value.isInitialized) {
-        await _controller!.startImageStream(_processCameraImage);
+      debugPrint("Error toggling flash: $e");
+    }
+  }
+
+  Future<void> _capture() async {
+    if (_controller == null || _isProcessing) return;
+    setState(() => _isProcessing = true);
+
+    try {
+      // 1. Capture Low-Noise Image
+      final XFile rawFile = await _controller!.takePicture();
+      
+      // 2. Crop & Process using robust logic
+      final File processedImage = await _processor.processHighQualityCrop(File(rawFile.path));
+
+      // 3. Keep Flash On if user wanted it (Torch mode stays on), or turn off?
+      // Usually better to leave it as is if user set it. 
+      // But if we navigate away, dispose will handle it.
+
+      // 4. Return Data
+      if (mounted) {
+        // Return result via callback or pop depending on navigation flow
+        // The previous code used onImageCaptured callback, so we use that.
+        widget.onImageCaptured(processedImage.path);
+        Navigator.pop(context); 
+      }
+
+    } catch (e) {
+      debugPrint("Capture Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Capture failed: $e")));
       }
     } finally {
-      // CRITICAL: Always reset capturing state
-      if (mounted) {
-        setState(() => _isCapturing = false);
-      }
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
-
-  /// Shows a preview of the captured image and asks user to confirm or retake
-  Future<bool?> _showCapturePreview(String imagePath) async {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        contentPadding: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Image Preview
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-              child: Image.file(
-                File(imagePath),
-                height: 250,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Title
-            const Text(
-              "Review Your Capture",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                "Is the eye clearly visible and in focus?",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 14),
-              ),
-            ),
-            const SizedBox(height: 20),
-            // Action Buttons
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => Navigator.pop(context, false),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text("Retake"),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => Navigator.pop(context, true),
-                      icon: const Icon(Icons.check),
-                      label: const Text("Continue"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-
-  // --- Helper: Convert CameraImage to ML Kit InputImage ---
-  InputImage? _inputImageFromCameraImage(CameraImage image) {
-    if (_controller == null) return null;
-
-    // Get camera rotation
-    final camera = _cameras.firstWhere(
-      (c) => c.lensDirection == _controller!.description.lensDirection,
-      orElse: () => _cameras.first,
-    );
-    
-    final sensorOrientation = camera.sensorOrientation;
-    InputImageRotation? rotation;
-    
-    if (Platform.isIOS) {
-      rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
-    } else if (Platform.isAndroid) {
-      // Android rotation calculation
-      var rotationCompensation = _orientations[_controller!.value.deviceOrientation];
-      if (rotationCompensation == null) return null;
-      
-      if (camera.lensDirection == CameraLensDirection.front) {
-        // Front camera
-        rotationCompensation = (sensorOrientation + rotationCompensation) % 360;
-      } else {
-        // Back camera
-        rotationCompensation = (sensorOrientation - rotationCompensation + 360) % 360;
-      }
-      rotation = InputImageRotationValue.fromRawValue(rotationCompensation);
-    }
-    
-    if (rotation == null) return null;
-
-    // Get image format
-    final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    
-    // NV21 and BGRA are supported
-    if (format == null || 
-        (Platform.isAndroid && format != InputImageFormat.nv21) ||
-        (Platform.isIOS && format != InputImageFormat.bgra8888)) {
-      return null;
-    }
-
-    // Validate plane data
-    if (image.planes.isEmpty) return null;
-
-    return InputImage.fromBytes(
-      bytes: image.planes.first.bytes,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: format,
-        bytesPerRow: image.planes.first.bytesPerRow,
-      ),
-    );
-  }
-
-  // Rotation map for Android
-  final Map<DeviceOrientation, int> _orientations = {
-    DeviceOrientation.portraitUp: 0,
-    DeviceOrientation.landscapeLeft: 90,
-    DeviceOrientation.portraitDown: 180,
-    DeviceOrientation.landscapeRight: 270,
-  };
 
   @override
   void dispose() {
-    _faceDetector.close();
     _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isCameraInitialized) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(color: AppColors.lightPrimary),
-              const SizedBox(height: 20),
-              Text(
-                _statusMessage,
-                style: const TextStyle(color: Colors.white70, fontSize: 16),
-              ),
-            ],
-          ),
-        ),
-      );
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -421,247 +131,70 @@ class _SmartCameraScreenState extends State<SmartCameraScreen> {
       body: Stack(
         children: [
           // 1. Full Screen Camera Preview
-          SizedBox.expand(
-            child: CameraPreview(_controller!),
+          Center(child: CameraPreview(_controller!)),
+
+          // 2. The Oval Guide (Custom Painter)
+          CustomPaint(
+            painter: EyeOverlayPainter(),
+            child: Container(),
           ),
 
-          // 2. Eye Focus Overlay (Oval shape for eye scanning)
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _EyeOverlayPainter(borderColor: _statusColor),
-            ),
-          ),
-
-          // 3. Removed corner markers (using oval overlay instead)
-
-          // 4. Top Status Bar
+          // 3. User Instructions
           Positioned(
-            top: 50,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _eyesOpen ? Icons.visibility : Icons.visibility_off,
-                      color: _eyesOpen ? Colors.green : Colors.red,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _eyesOpen ? "Eyes Open" : "Eyes Closed",
-                      style: TextStyle(
-                        color: _eyesOpen ? Colors.green : Colors.red,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Icon(
-                      _faceCentered ? Icons.center_focus_strong : Icons.center_focus_weak,
-                      color: _faceCentered ? Colors.green : Colors.orange,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _faceCentered ? "Centered" : "Off-center",
-                      style: TextStyle(
-                        color: _faceCentered ? Colors.green : Colors.orange,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
+            top: 100, left: 20, right: 20,
+            child: Text(
+              "Keep the eye steady inside the oval.\nTurn on Flash for clearer results.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white, 
+                fontSize: 16, 
+                shadows: [Shadow(color: Colors.black, blurRadius: 4)]
               ),
             ),
           ),
 
-          // 5. Status Message at Bottom (moved up to avoid overlap)
+          // 4. Controls Bottom Sheet
           Positioned(
-            bottom: 150,
-            left: 16,
-            right: 16,
-            child: Center(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                decoration: BoxDecoration(
-                  color: _statusColor.withAlpha(200),
-                  borderRadius: BorderRadius.circular(30),
+            bottom: 40, left: 0, right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Flash Button
+                IconButton(
+                  icon: Icon(
+                    _isFlashOn ? Icons.highlight : Icons.flash_off, 
+                    color: _isFlashOn ? Colors.yellow : Colors.white, 
+                    size: 30
+                  ),
+                  onPressed: _toggleFlash,
                 ),
-                child: Text(
-                  _statusMessage,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white, 
-                    fontSize: 16, 
-                    fontWeight: FontWeight.bold,
+
+                // Shutter Button (Manual Capture)
+                GestureDetector(
+                  onTap: _capture,
+                  child: Container(
+                    width: 75, height: 75,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      border: Border.all(color: Colors.teal, width: 4),
+                    ),
+                    child: _isProcessing 
+                      ? const Padding(padding: EdgeInsets.all(15), child: CircularProgressIndicator()) 
+                      : const Icon(Icons.camera_alt, color: Colors.teal, size: 35),
                   ),
                 ),
-              ),
-            ),
-          ),
-          
-          // 6. Manual Override Button (wrapped in SafeArea)
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Back Button
-                    FloatingActionButton(
-                      heroTag: "back",
-                      backgroundColor: Colors.white24,
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Icon(Icons.arrow_back, color: Colors.white),
-                    ),
-                    const SizedBox(width: 40),
-                    // Manual Capture Button
-                    FloatingActionButton.large(
-                      heroTag: "capture",
-                      backgroundColor: AppColors.lightPrimary,
-                      onPressed: _isCapturing ? null : () => _takePicture(),
-                      child: _isCapturing 
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Icon(Icons.camera_alt, color: Colors.white, size: 36),
-                    ),
-                    const SizedBox(width: 40),
-                    // Switch Camera Button
-                    FloatingActionButton(
-                      heroTag: "switch",
-                      backgroundColor: Colors.white24,
-                      onPressed: _switchCamera,
-                      child: const Icon(Icons.flip_camera_ios, color: Colors.white),
-                    ),
-                  ],
+
+                // Back Button (Cancel)
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                  onPressed: () => Navigator.pop(context),
                 ),
-              ),
+              ],
             ),
-          ),
+          )
         ],
       ),
     );
-  }
-
-  Future<void> _switchCamera() async {
-    if (_cameras.length < 2) return;
-    
-    final currentDirection = _controller!.description.lensDirection;
-    CameraDescription newCamera;
-    
-    if (currentDirection == CameraLensDirection.back) {
-      newCamera = _cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-        orElse: () => _cameras.first,
-      );
-    } else {
-      newCamera = _cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => _cameras.first,
-      );
-    }
-    
-    await _controller!.stopImageStream();
-    await _controller!.dispose();
-    
-    _controller = CameraController(
-      newCamera,
-      ResolutionPreset.high,
-      enableAudio: false,
-      imageFormatGroup: Platform.isAndroid 
-          ? ImageFormatGroup.nv21 
-          : ImageFormatGroup.bgra8888,
-    );
-    
-    await _controller!.initialize();
-    await _controller!.startImageStream(_processCameraImage);
-    
-    if (mounted) setState(() {});
-  }
-}
-
-/// Custom painter that draws a dark overlay with an eye-shaped cutout
-class _EyeOverlayPainter extends CustomPainter {
-  final Color borderColor;
-  
-  _EyeOverlayPainter({required this.borderColor});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.black54;
-    
-    // Create a rectangular path for the whole screen
-    final path = Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
-    
-    // Use CameraOverlayConfig for consistent positioning
-    // This ensures the oval matches the crop rectangle exactly
-    final holeRect = CameraOverlayConfig.getOvalRect(size);
-    
-    final holePath = Path()..addOval(holeRect);
-    
-    // Cut the hole out
-    final finalPath = Path.combine(PathOperation.difference, path, holePath);
-    canvas.drawPath(finalPath, paint);
-
-    // Draw a border around the eye hole to guide user
-    final borderPaint = Paint()
-      ..color = borderColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
-    canvas.drawOval(holeRect, borderPaint);
-    
-    // Add glow effect when green (ready)
-    if (borderColor == Colors.green) {
-      final glowPaint = Paint()
-        ..color = Colors.green.withAlpha(60)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 8.0
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
-      canvas.drawOval(holeRect, glowPaint);
-    }
-    
-    // Draw "Align eye within the oval" text
-    _drawText(canvas, size, holeRect);
-  }
-
-  void _drawText(Canvas canvas, Size size, Rect cropRect) {
-    // Only draw the text if the status isn't green (already aligned)
-    if (borderColor == Colors.green) return;
-    
-    final textPainter = TextPainter(
-      text: const TextSpan(
-        text: 'Align eye within the oval',
-        style: TextStyle(
-          color: Colors.white, 
-          fontSize: 16, 
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(offset: Offset(0, 1), blurRadius: 3.0, color: Colors.black),
-          ]
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas, 
-      Offset((size.width - textPainter.width) / 2, cropRect.bottom + 20)
-    );
-  }
-  
-  @override
-  bool shouldRepaint(covariant _EyeOverlayPainter oldDelegate) {
-    return oldDelegate.borderColor != borderColor;
   }
 }

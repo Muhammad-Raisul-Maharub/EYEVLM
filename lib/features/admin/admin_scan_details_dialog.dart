@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../core/utils/app_notifications.dart';
+import '../../core/services/pdf_service.dart';
 import 'admin_service.dart';
 
 /// Dialog for viewing and editing scan details (Admin only)
@@ -144,42 +145,22 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
     }
   }
 
-  Future<void> _downloadImage() async {
-    final imageUrl = widget.scan['image_url'] as String?;
-    if (imageUrl == null || imageUrl.isEmpty) {
-      AppNotifications.showError(context, 'No image available');
-      return;
-    }
-
+  Future<void> _downloadReport() async {
     setState(() => _isLoading = true);
-
     try {
-      final adminService = ref.read(adminServiceProvider);
-      final imageBytes = await adminService.downloadImage(imageUrl);
-      
-      if (imageBytes == null) {
-        if (mounted) {
-          AppNotifications.showError(context, 'Failed to download image');
-        }
-        return;
-      }
-
-      final scanId = widget.scan['id'];
-      final filePath = await adminService.saveImageToDevice(
-        imageBytes,
-        'scan_${scanId}_${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
-
       if (mounted) {
-        if (filePath != null) {
-          AppNotifications.showSuccess(context, 'Image saved to $filePath');
-        } else {
-          AppNotifications.showInfo(context, 'Image downloaded (web download not supported)');
-        }
+         AppNotifications.showInfo(context, "Generating Report...");
+      }
+      
+      // Use the PdfService to generate, save, and share data
+      await PdfService().generateAndShareReport(widget.scan);
+      
+      if (mounted) {
+        AppNotifications.showSuccess(context, "Report generated & shared!");
       }
     } catch (e) {
       if (mounted) {
-        AppNotifications.showError(context, 'Error: $e');
+        AppNotifications.showError(context, 'Error generating PDF: $e');
       }
     } finally {
       if (mounted) {
@@ -347,49 +328,78 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
               ),
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : Row(
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Delete button
-                        OutlinedButton.icon(
-                          onPressed: _deleteScan,
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          label: const Text('Delete', style: TextStyle(color: Colors.red)),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.red),
-                          ),
+                        // Primary Actions Row
+                        Row(
+                          children: [
+                             // Download Report (Prominent)
+                             Expanded(
+                               child: OutlinedButton.icon(
+                                 onPressed: _downloadReport,
+                                 icon: const Icon(Icons.picture_as_pdf, size: 20),
+                                 label: const Text('Download Report', overflow: TextOverflow.ellipsis),
+                                 style: OutlinedButton.styleFrom(
+                                   padding: const EdgeInsets.symmetric(vertical: 12),
+                                   alignment: Alignment.center,
+                                 ),
+                               ),
+                             ),
+                             const SizedBox(width: 8),
+                             // Delete (Icon only to save space, or red text)
+                             IconButton.filledTonal(
+                               onPressed: _deleteScan,
+                               icon: const Icon(Icons.delete, color: Colors.red),
+                               style: IconButton.styleFrom(
+                                 backgroundColor: Colors.red[50],
+                               ),
+                               tooltip: 'Delete Scan',
+                             ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(height: 12),
                         
-                        // Download button
-                        OutlinedButton.icon(
-                          onPressed: _downloadImage,
-                          icon: const Icon(Icons.download),
-                          label: const Text('Download'),
-                        ),
-                        
-                        const Spacer(),
-                        
-                        // Edit/Save button
+                        // Edit / Save Row
                         if (_isEditing)
                           Row(
                             children: [
-                              TextButton(
-                                onPressed: () => setState(() => _isEditing = false),
-                                child: const Text('Cancel'),
+                              Expanded(
+                                child: TextButton(
+                                  onPressed: () => setState(() => _isEditing = false),
+                                  style: TextButton.styleFrom(
+                                     foregroundColor: Colors.grey[700],
+                                     padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  child: const Text('Cancel'),
+                                ),
                               ),
                               const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                onPressed: _saveChanges,
-                                icon: const Icon(Icons.save),
-                                label: const Text('Save'),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _saveChanges,
+                                  icon: const Icon(Icons.save),
+                                  label: const Text('Save Changes'),
+                                  style: ElevatedButton.styleFrom(
+                                     padding: const EdgeInsets.symmetric(vertical: 12),
+                                     backgroundColor: Theme.of(context).primaryColor,
+                                     foregroundColor: Colors.white,
+                                  ),
+                                ),
                               ),
                             ],
                           )
                         else
-                          ElevatedButton.icon(
-                            onPressed: () => setState(() => _isEditing = true),
-                            icon: const Icon(Icons.edit),
-                            label: const Text('Edit'),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () => setState(() => _isEditing = true),
+                              icon: const Icon(Icons.edit),
+                              label: const Text('Edit Details'),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
                           ),
                       ],
                     ),
