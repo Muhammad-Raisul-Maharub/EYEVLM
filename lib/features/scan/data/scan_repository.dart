@@ -46,7 +46,7 @@ class ScanRepository {
 
     // ========== STEP 1: ALWAYS SAVE LOCALLY FIRST ==========
     // This ensures data is immediately available in History, even offline
-    final String localScanId = '${user.id}_${DateTime.now().millisecondsSinceEpoch}';
+    final String localScanId = '${userId}_${DateTime.now().millisecondsSinceEpoch}';
     
     if (!kIsWeb) {
       try {
