@@ -50,7 +50,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
        final event = data.event;
        if (event == AuthChangeEvent.signedIn || event == AuthChangeEvent.tokenRefreshed || event == AuthChangeEvent.initialSession) {
-         _loadScans();
+         _loadScans(silent: true);
        }
     });
   }
@@ -62,7 +62,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   /// Load scans from local database (offline-first) AND Supabase for complete data
-  Future<void> _loadScans() async {
+  Future<void> _loadScans({bool silent = false}) async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     debugPrint("🔄 HistoryScreen: Loading scans for User ID: $userId");
 
@@ -71,7 +71,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    // If silent is true, we don't show the loading spinner, 
+    // but we still fetch data in background
+    if (!silent) {
+       setState(() => _isLoading = true);
+    }
 
     try {
       if (kIsWeb) {
@@ -92,8 +96,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         // Mobile: Load from local DB first (instant), then sync from Supabase
         final localScans = await DatabaseHelper.instance.getAllScans(userId: userId);
         
-        // Show local scans immediately for responsive UI
-        if (mounted) {
+        // Show local scans immediately for responsive UI (if not silent refresh)
+        if (mounted && !silent) {
           setState(() {
             _scans = localScans;
             _isLoading = false;
@@ -112,17 +116,40 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           final remoteList = List<Map<String, dynamic>>.from(remoteScans);
           debugPrint("📡 Fetched ${remoteList.length} scans from Supabase");
           
+          // --- PRUNING LOGIC (Sync Deletions) ---
+          // Use 'id' (int) to identify synced scans. 
+          // If a scan is in Local DB (and is marked synced or has URL) but NOT in Remote List, it was deleted on server.
+          // We must delete it locally.
+          final remoteIds = remoteList.map((s) => s['id'].toString()).toSet();
+          
+          for (final local in localScans) {
+             final localId = local['id'].toString();
+             final isSynced = local['is_synced'] == 1 || (local['image_url'] != null && local['image_url'].toString().startsWith('http'));
+             
+             // If it was synced before, but is now missing from remote -> It's deleted.
+             if (isSynced && !remoteIds.contains(localId)) {
+                debugPrint("🗑️ Pruning deleted scan from local DB: ID $localId");
+                await DatabaseHelper.instance.deleteScan(local['id']);
+             }
+          }
+          
+          // Refetch local scans after pruning to ensure we merge correctly
+          final prunedLocalScans = await DatabaseHelper.instance.getAllScans(userId: userId);
+
           // Merge: Use remote data if available (has actual predictions)
-          // Keep local-only scans that haven't synced yet
-          final merged = _mergeScans(localScans, remoteList);
+          final merged = _mergeScans(prunedLocalScans, remoteList);
           
           if (mounted) {
-            setState(() => _scans = merged);
+            setState(() {
+               _scans = merged;
+               _isLoading = false;
+            });
           }
           debugPrint("🔄 Merged to ${merged.length} total scans");
         } catch (e) {
           debugPrint("⚠️ Could not sync from Supabase: $e");
-          // Keep showing local scans - that's fine for offline mode
+          // On error, just ensure loading is off and we show what we have
+          if (mounted) setState(() => _isLoading = false);
         }
       }
     } catch (e) {
@@ -139,36 +166,38 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     List<Map<String, dynamic>> localScans,
     List<Map<String, dynamic>> remoteScans,
   ) {
-    // Create a map of remote scans by image_url for quick lookup
-    final Map<String, Map<String, dynamic>> remoteByUrl = {};
+    // 1. Create a map of remote scans by ID (for strict matching)
+    final Map<String, Map<String, dynamic>> remoteById = {};
     for (final scan in remoteScans) {
-      final url = scan['image_url']?.toString() ?? '';
-      if (url.isNotEmpty) {
-        remoteByUrl[url] = scan;
+      remoteById[scan['id'].toString()] = scan;
+    }
+    
+    // 2. Start with all Remote scans (Primary Source)
+    final List<Map<String, dynamic>> merged = List.from(remoteScans);
+    
+    // 3. Add Local scans ONLY if they are pending (not synced)
+    for (final local in localScans) {
+      final localId = local['id'].toString();
+      // If remote has this ID, we already added it (from remote list), so skip local
+      if (remoteById.containsKey(localId)) continue;
+
+      // Special handling for legacy/offline scans without matching IDs
+      // If a local scan has an image path, check if a remote scan has that same file name in its URL
+      bool isDuplicate = false;
+      final localPath = local['image_url']?.toString() ?? '';
+      
+      if (localPath.startsWith('/')) { // It's a file path
+         final fileName = localPath.split('/').last;
+         // Check if any remote scan URL contains this filename
+         isDuplicate = remoteScans.any((r) => (r['image_url']?.toString() ?? '').contains(fileName));
+      }
+
+      if (!isDuplicate) {
+         merged.add(local);
       }
     }
     
-    // Build merged list
-    final List<Map<String, dynamic>> merged = [];
-    final Set<String> addedUrls = {};
-    
-    // Add all remote scans first (they have actual server data)
-    for (final scan in remoteScans) {
-      merged.add(scan);
-      final url = scan['image_url']?.toString() ?? '';
-      if (url.isNotEmpty) addedUrls.add(url);
-    }
-    
-    // Add local-only scans (not yet synced to server)
-    for (final scan in localScans) {
-      final url = scan['image_url']?.toString() ?? '';
-      // Check if this is a local file path (not synced yet)
-      if (url.startsWith('/') && !addedUrls.contains(url)) {
-        merged.add(scan);
-      }
-    }
-    
-    // Sort by created_at descending
+    // 4. Sort by created_at descending
     merged.sort((a, b) {
       final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime(1970);
       final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime(1970);
@@ -395,7 +424,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     ref.listen<int>(historyRefreshProvider, (previous, next) {
       if (next > (previous ?? 0)) {
         debugPrint("🔄 HistoryScreen: Refresh triggered via Provider!");
-        _loadScans();
+        _loadScans(silent: true);
       }
     });
 
@@ -405,7 +434,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
 
     // Listen for refresh triggers from ScanFlowScreen
-    ref.listen(historyRefreshProvider, (_, __) => _loadScans());
+    ref.listen(historyRefreshProvider, (_, __) => _loadScans(silent: true));
 
     return Scaffold(
       appBar: AppBar(
@@ -444,7 +473,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         children: [
           RefreshIndicator(
             onRefresh: () async {
-              await _loadScans();
+              await _loadScans(silent: true);
             },
             child: _buildScansList(),
           ),
@@ -480,7 +509,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             Text(AppStrings.tr(ref, 'noScansYet')),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadScans,
+              onPressed: () => _loadScans(silent: false),
               child: const Text("Refresh"),
             ),
           ],
@@ -492,7 +521,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       itemCount: scans.length,
       itemBuilder: (context, index) {
         final scan = scans[index];
-        final visibleNumber = index + 1;
+        // Calculate number based on total count to keep it absolute (Newest = #Total, Oldest = #1)
+        final visibleNumber = scans.length - index;
         final prediction = scan['prediction'] ?? 'Unknown';
         final isHealthy = prediction == 'Healthy';
         final confidence = scan['confidence'] != null 

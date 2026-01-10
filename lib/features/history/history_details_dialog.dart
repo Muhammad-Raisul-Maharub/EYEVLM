@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import 'package:intl/intl.dart';
-import '../../core/services/pdf_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../core/services/pdf_service.dart';
 
 void showHistoryDetails(BuildContext context, Map<String, dynamic> scan, Function(int, String) onDelete) {
   final DateTime date = DateTime.parse(scan['created_at']);
@@ -179,25 +178,24 @@ void showHistoryDetails(BuildContext context, Map<String, dynamic> scan, Functio
                             } catch (e) {
                                if (context.mounted) {
                                  ScaffoldMessenger.of(context).showSnackBar(
-                                   SnackBar(content: Text('Failed to download: $e'), backgroundColor: Colors.red),
+                                   SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
                                  );
                                }
                             }
                           },
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                             side: BorderSide(color: Colors.grey.shade300),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             foregroundColor: Colors.grey[700],
                             alignment: Alignment.center,
                           ),
-                          icon: const Icon(Icons.download, size: 20),
-                          label: const Flexible(
-                            child: Text(
-                              "Download Report", 
+                          icon: const Icon(Icons.download, size: 18),
+                          label: const Text(
+                              "Download", // Shortened label
                               textAlign: TextAlign.center, 
+                              style: TextStyle(fontSize: 13),
                               overflow: TextOverflow.ellipsis
-                            ),
                           ),
                         ),
                       ),

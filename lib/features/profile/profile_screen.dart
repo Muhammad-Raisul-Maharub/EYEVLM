@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:eyevlm_app/features/profile/widgets/timeline_tile.dart';
 import 'package:eyevlm_app/core/utils/app_notifications.dart';
 import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -252,13 +253,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         const SizedBox(height: 4),
 
-        // Version - matches pubspec.yaml
-        Text(
-          "Version 1.4.9",
-          style: GoogleFonts.inter(
-            fontSize: 12, 
-            color: Colors.grey[400],
-          ),
+        // Version (Dynamic)
+        FutureBuilder<PackageInfo>(
+          future: PackageInfo.fromPlatform(),
+          builder: (context, snapshot) {
+            final version = snapshot.data?.version ?? '1.5.4';
+            final build = snapshot.data?.buildNumber ?? '';
+            return Text(
+              "Version $version ($build)",
+              style: GoogleFonts.inter(
+                fontSize: 12, 
+                color: Colors.grey[400],
+              ),
+            );
+          },
         ),
       ],
     );
