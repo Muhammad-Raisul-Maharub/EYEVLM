@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:eyevlm_app/features/scan/presentation/smart_camera_screen.dart';
+
 import 'package:eyevlm_app/features/scan/presentation/clinical_data_form.dart';
 import 'package:eyevlm_app/features/scan/data/scan_repository.dart';
 import 'package:eyevlm_app/core/theme/app_tokens.dart';
@@ -364,22 +364,20 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
       return;
     }
 
-    final result = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => SmartCameraScreen(
-          onImageCaptured: (path) {
-            Navigator.pop(context, path);
-          },
-        ),
-      ),
-    );
-
-    if (result != null && mounted) {
-      final bytes = await File(result).readAsBytes();
-      setState(() {
-        _capturedImages.add(_CapturedImage(path: result, bytes: bytes, isCropped: false));
-      });
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.camera);
+      
+      if (image != null && mounted) {
+        final bytes = await File(image.path).readAsBytes();
+        setState(() {
+          _capturedImages.add(_CapturedImage(path: image.path, bytes: bytes, isCropped: false));
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        AppNotifications.showError(context, "Error capturing image: $e");
+      }
     }
   }
 
@@ -494,22 +492,20 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
 
   /// Retake a specific image
   Future<void> _retakeImage(int index) async {
-    final result = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => SmartCameraScreen(
-          onImageCaptured: (path) {
-            Navigator.pop(context, path);
-          },
-        ),
-      ),
-    );
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.camera);
 
-    if (result != null && mounted) {
-      final bytes = await File(result).readAsBytes();
-      setState(() {
-        _capturedImages[index] = _CapturedImage(path: result, bytes: bytes, isCropped: false);
-      });
+      if (image != null && mounted) {
+        final bytes = await File(image.path).readAsBytes();
+        setState(() {
+          _capturedImages[index] = _CapturedImage(path: image.path, bytes: bytes, isCropped: false);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        AppNotifications.showError(context, "Error retaking image: $e");
+      }
     }
   }
 

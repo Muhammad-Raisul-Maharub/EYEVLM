@@ -96,7 +96,10 @@ class AuthService {
       await _auth.signInWithPassword(email: email, password: password);
       
       // Cache credentials for offline use
-      await _ref.read(offlineAuthServiceProvider).saveCredentials(email, password);
+      final user = _auth.currentUser;
+      if (user != null) {
+        await _ref.read(offlineAuthServiceProvider).saveCredentials(email, password, user.id);
+      }
       
       debugPrint('✅ Online login successful, credentials cached');
     } else {
@@ -151,6 +154,11 @@ class AuthService {
   /// Get cached email for offline mode
   Future<String?> getCachedEmail() async {
     return await _ref.read(offlineAuthServiceProvider).getCachedEmail();
+  }
+
+  /// Get cached userId for offline mode
+  Future<String?> getCachedUserId() async {
+    return await _ref.read(offlineAuthServiceProvider).getCachedUserId();
   }
 
   /// Check if current user is admin

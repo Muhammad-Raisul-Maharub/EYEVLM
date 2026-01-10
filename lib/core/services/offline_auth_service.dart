@@ -11,8 +11,8 @@ class OfflineAuthService {
   static const int _maxOfflineDays = 30; // Credentials valid for 30 days offline
 
   /// Save credentials after successful online login
-  /// Stores a hash of email+password, never the raw password
-  Future<void> saveCredentials(String email, String password) async {
+  /// Stores a hash of email+password and the userId
+  Future<void> saveCredentials(String email, String password, String userId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       
@@ -23,6 +23,7 @@ class OfflineAuthService {
       await prefs.setString(_credentialsKey, jsonEncode({
         'email': email.toLowerCase().trim(),
         'hash': hash,
+        'userId': userId,
       }));
       await prefs.setInt(_lastLoginKey, DateTime.now().millisecondsSinceEpoch);
       
@@ -89,6 +90,19 @@ class OfflineAuthService {
       
       final stored = jsonDecode(storedJson) as Map<String, dynamic>;
       return stored['email'] as String?;
+    } catch (e) {
+    }
+  }
+
+  /// Get the cached userId if exists
+  Future<String?> getCachedUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final storedJson = prefs.getString(_credentialsKey);
+      if (storedJson == null) return null;
+      
+      final stored = jsonDecode(storedJson) as Map<String, dynamic>;
+      return stored['userId'] as String?;
     } catch (e) {
       return null;
     }

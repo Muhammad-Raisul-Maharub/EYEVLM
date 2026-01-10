@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../../core/services/offline_sync_service.dart';
 import '../../../core/database_helper.dart';
+import '../../../core/services/offline_auth_service.dart';
 
 /// Repository class that handles the entire scan submission process.
 /// Uses EXISTING 'scans' table and 'eye-images' bucket.
@@ -28,8 +29,15 @@ class ScanRepository {
     List<PlatformFile>? attachments,
     List<Uint8List>? imageBytesList, // For Web multi-image
   }) async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) throw Exception("User not logged in");
+    var user = _supabase.auth.currentUser;
+    String? userId = user?.id;
+    
+    // Fallback to cached userId if offline/session expired
+    if (userId == null) {
+      userId = await OfflineAuthService().getCachedUserId();
+    }
+
+    if (userId == null) throw Exception("User not logged in");
 
     // Validate max 5 images
     if (imagePaths.length > 5) {
@@ -44,7 +52,7 @@ class ScanRepository {
       try {
         await DatabaseHelper.instance.createScan({
           'id': localScanId,
-          'user_id': user.id,
+          'user_id': userId,
           'image_paths': imagePaths,
           'symptoms': formData['suspected_disease'],
           'ai_prediction': 'Pending',
@@ -82,7 +90,7 @@ class ScanRepository {
 
     try {
       // Generate a Scan Session ID (Timestamp based, acts as unique folder)
-      final String scanSessionId = '${user.id}_${DateTime.now().millisecondsSinceEpoch}';
+      final String scanSessionId = '${userId}_${DateTime.now().millisecondsSinceEpoch}';
       
       // ========== UPLOAD ALL IMAGES (No automatic cropping) ==========
       // Images are already processed (manually cropped by user if desired)
@@ -265,7 +273,7 @@ class ScanRepository {
 
       // ========== INSERT INTO DATABASE ==========
       await _supabase.from('scans').insert({
-        'user_id': user.id,
+        'user_id': userId,
         'created_at': DateTime.now().toIso8601String(),
         
         // Backward compatible single image URL
@@ -311,16 +319,40 @@ class ScanRepository {
 
   /// Fetches all scan records for the current user
   Future<List<Map<String, dynamic>>> getUserScans() async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) return [];
+    final userId = _supabase.auth.currentUser?.id ?? await OfflineAuthService().getCachedUserId();
+    if (userId == null) return [];
 
-    final response = await _supabase
-        .from('scans')
-        .select()
-        .eq('user_id', user.id)
-        .order('created_at', ascending: false);
+    final connectivityResult = await Connectivity().checkConnectivity();
+    final isOnline = connectivityResult.any((r) => r != ConnectivityResult.none);
 
-    return List<Map<String, dynamic>>.from(response);
+    final dbHelper = DatabaseHelper.instance;
+
+    if (isOnline) {
+      try {
+        final response = await _supabase
+            .from('scans')
+            .select()
+            .eq('user_id', userId)
+            .order('created_at', ascending: false);
+
+        final scans = List<Map<String, dynamic>>.from(response);
+
+        // Cache scans locally
+        for (var scan in scans) {
+          await dbHelper.createScan(scan);
+          await dbHelper.markAsSynced(scan['id'].toString());
+        }
+
+        return scans;
+      } catch (e) {
+        debugPrint("⚠️ Online fetch failed, falling back to local DB: $e");
+        return await dbHelper.getAllScans(userId: userId);
+      }
+    } else {
+      // Offline: Fetch from local DB
+      debugPrint("📴 OFFLINE: Fetching scans from local DB");
+      return await dbHelper.getAllScans(userId: userId);
+    }
   }
 
   /// Gets a single scan by ID

@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/offline_sync_service.dart'; // Ensure connectivity check availability
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Admin service for managing all user scans
 /// Only accessible by admin users
@@ -20,42 +23,100 @@ class AdminService {
     bool ascending = false,
   }) async {
     try {
-      // Note: Removed join to 'profiles' table as it may not exist or have RLS issues
-      var query = _supabase
-          .from('scans')
-          .select('*')
-          .limit(limit)
-          .range(offset, offset + limit - 1);
-      
-      // Apply sorting
-      if (sortBy != null) {
-        query = query.order(sortBy, ascending: ascending);
+      final connectivityResult = await Connectivity().checkConnectivity();
+      final isOnline = connectivityResult.any((r) => r != ConnectivityResult.none);
+
+      if (isOnline) {
+        // Online: Fetch from Supabase
+        var query = _supabase
+            .from('scans')
+            .select('*')
+            .limit(limit)
+            .range(offset, offset + limit - 1);
+        
+        // Apply sorting
+        if (sortBy != null) {
+          query = query.order(sortBy, ascending: ascending);
+        } else {
+          query = query.order('created_at', ascending: false);
+        }
+        
+        final response = await query;
+        List<Map<String, dynamic>> results;
+        
+        // Filter by search query if provided (filtering locally after fetch for simplicity with text search)
+        if (searchQuery != null && searchQuery.isNotEmpty) {
+          final searchLower = searchQuery.toLowerCase();
+          results = (response as List<dynamic>).where((scan) {
+            final prediction = (scan['prediction'] ?? '').toString().toLowerCase();
+            final symptoms = (scan['symptoms'] ?? '').toString().toLowerCase();
+            final notes = (scan['notes'] ?? '').toString().toLowerCase();
+            return prediction.contains(searchLower) ||
+                   symptoms.contains(searchLower) ||
+                   notes.contains(searchLower);
+          }).map((e) => e as Map<String, dynamic>).toList();
+        } else {
+          results = (response as List<dynamic>)
+            .map((e) => e as Map<String, dynamic>)
+            .toList();
+        }
+
+        // Cache results if it's the default view (no search/sort or just basic sort)
+        if (offset == 0 && (searchQuery == null || searchQuery.isEmpty)) {
+           await _cacheScans(results);
+        }
+
+        return results;
       } else {
-        query = query.order('created_at', ascending: false);
+        // Offline: Fetch from Cache
+        debugPrint("📴 AdminService: Fetching from cache");
+        final cached = await _getCachedScans();
+        
+        if (searchQuery != null && searchQuery.isNotEmpty) {
+           final searchLower = searchQuery.toLowerCase();
+           return cached.where((scan) {
+            final prediction = (scan['prediction'] ?? '').toString().toLowerCase();
+            final symptoms = (scan['symptoms'] ?? '').toString().toLowerCase();
+            final notes = (scan['notes'] ?? '').toString().toLowerCase();
+            return prediction.contains(searchLower) ||
+                   symptoms.contains(searchLower) ||
+                   notes.contains(searchLower);
+          }).toList();
+        }
+        return cached;
       }
-      
-      final response = await query;
-      
-      // Filter by search query if provided
-      if (searchQuery != null && searchQuery.isNotEmpty) {
-        final searchLower = searchQuery.toLowerCase();
-        return (response as List<dynamic>).where((scan) {
-          final prediction = (scan['prediction'] ?? '').toString().toLowerCase();
-          final symptoms = (scan['symptoms'] ?? '').toString().toLowerCase();
-          final notes = (scan['notes'] ?? '').toString().toLowerCase();
-          return prediction.contains(searchLower) ||
-                 symptoms.contains(searchLower) ||
-                 notes.contains(searchLower);
-        }).map((e) => e as Map<String, dynamic>).toList();
-      }
-      
-      return (response as List<dynamic>)
-          .map((e) => e as Map<String, dynamic>)
-          .toList();
     } catch (e) {
       debugPrint('❌ AdminService.getAllScans error: $e');
-      rethrow;
+      // On error (e.g. timeout), try cache
+      return await _getCachedScans();
     }
+  }
+
+  // --- Caching Helpers ---
+  static const String _adminCacheKey = 'admin_scans_cache';
+
+  Future<void> _cacheScans(List<Map<String, dynamic>> scans) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Ensure complex objects are safe for JSON (they should be coming from Supabase)
+      await prefs.setString(_adminCacheKey, jsonEncode(scans));
+    } catch (e) {
+      debugPrint("⚠️ Failed to cache admin scans: $e");
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getCachedScans() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? jsonStr = prefs.getString(_adminCacheKey);
+      if (jsonStr != null) {
+        final List<dynamic> jsonList = jsonDecode(jsonStr);
+        return jsonList.map((e) => e as Map<String, dynamic>).toList();
+      }
+    } catch (e) {
+      debugPrint("⚠️ Failed to load cached admin scans: $e");
+    }
+    return [];
   }
 
   /// Get total scan count

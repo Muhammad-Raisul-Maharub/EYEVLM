@@ -127,6 +127,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
 
   Future<void> _deleteSelected() async {
     if (_selectedScanIds.isEmpty) return;
+    
+    // Check connectivity for write actions
+    final isOnline = ref.read(isOnlineProvider);
+    if (!isOnline) {
+      AppNotifications.showError(context, "Cannot delete scans while offline");
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -211,27 +218,36 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
           ],
         ),
       ),
-      body: !isOnline
-          ? Center(
-              child: Column(
+      body: Column(
+        children: [
+          if (!isOnline)
+            Container(
+              color: Colors.orange.shade100,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.wifi_off, size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
+                  Icon(Icons.wifi_off, size: 16, color: Colors.orange.shade800),
+                  const SizedBox(width: 8),
                   Text(
-                    'Admin features require internet connection',
-                    style: TextStyle(color: Colors.grey[600]),
+                    "Offline Mode - Showing cached data",
+                    style: TextStyle(color: Colors.orange.shade800, fontSize: 13, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
-            )
-          : TabBarView(
+            ),
+          Expanded(
+            child: TabBarView(
               controller: _tabController,
               children: [
                 _buildScansTab(),
                 _buildStatisticsTab(),
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 

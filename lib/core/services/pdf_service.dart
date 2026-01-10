@@ -218,8 +218,23 @@ class PdfService {
   Future<String?> generateReportFile(Map<String, dynamic> scan) async {
     Uint8List? imageBytes;
     
-    // Attempt to fetch image if URL exists
-    if (scan['image_url'] != null) {
+    // 1. Check for valid local image first (Offline support)
+    List<dynamic>? imagePaths = scan['image_paths'] is List ? scan['image_paths'] : null;
+    if (imagePaths != null && imagePaths.isNotEmpty) {
+       final localPath = imagePaths.first as String;
+       final file = File(localPath);
+       if (await file.exists()) {
+         try {
+           imageBytes = await file.readAsBytes();
+           debugPrint("✅ PdfService: Used local image for PDF");
+         } catch (e) {
+           debugPrint("⚠️ PdfService: Failed to read local image: $e");
+         }
+       }
+    }
+
+    // 2. Fallback to Supabase download if no local image
+    if (imageBytes == null && scan['image_url'] != null) {
       try {
         final String imageUrl = scan['image_url'];
         final uri = Uri.parse(imageUrl);
@@ -230,6 +245,7 @@ class PdfService {
              final storagePath = segments.sublist(bucketIndex + 1).join('/');
              final response = await Supabase.instance.client.storage.from('eye-images').download(storagePath);
              imageBytes = response;
+             debugPrint("✅ PdfService: Downloaded image for PDF");
         }
       } catch (e) {
         debugPrint("⚠️ PdfService: Could not fetch image for PDF: $e");
