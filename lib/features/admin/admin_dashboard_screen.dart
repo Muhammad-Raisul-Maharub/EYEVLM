@@ -92,8 +92,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       if (mounted) {
         setState(() {
           _error = e.toString();
-          _isLoading = false;
+          // _isLoading = false; // Handled in finally
         });
+      }
+    } finally {
+      if (mounted && !silent) {
+        setState(() => _isLoading = false);
       }
     }
   }

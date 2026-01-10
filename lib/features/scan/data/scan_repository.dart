@@ -62,7 +62,7 @@ class ScanRepository {
           'suspected_disease': formData['suspected_disease'],
           'clinical_data': formData['clinical_data'] ?? {},
           'is_synced': 0, // Will be updated after successful upload
-          'created_at': DateTime.now().toIso8601String(),
+          'created_at': DateTime.now().toUtc().toIso8601String(),
         });
         debugPrint("✅ Scan saved locally first (ID: $localScanId)");
       } catch (e) {
@@ -274,7 +274,7 @@ class ScanRepository {
       // ========== INSERT INTO DATABASE ==========
       await _supabase.from('scans').insert({
         'user_id': userId,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
         
         // Backward compatible single image URL
         'image_url': primaryImageUrl,

@@ -158,6 +158,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         setState(() => _isLoading = false);
         AppNotifications.showError(context, 'Error loading history: $e');
       }
+    } finally {
+      if (mounted && !silent) {
+        setState(() => _isLoading = false);
+      }
     }
   }
   

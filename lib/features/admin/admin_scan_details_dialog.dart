@@ -102,7 +102,6 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
       final adminService = ref.read(adminServiceProvider);
       
       // Reconstruct Clinical Data JSON
-      // Format symptoms list for display
       final List<String> formattedSymptoms = [];
       for (var q in _questions) {
         final key = "Q${q.id}";
@@ -112,7 +111,6 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
         }
       }
       
-      // Merge with existing clinical data to preserve timestamp etc
       final Map<String, dynamic> existingClinical = 
         (widget.scan['clinical_data'] is Map) ? Map.from(widget.scan['clinical_data']) : {};
       
@@ -120,21 +118,35 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
       existingClinical['checked_symptoms'] = formattedSymptoms;
       existingClinical['additional_notes'] = _notesController.text.trim();
 
+      // Safe integer parsing
+      int safeInt(String val) {
+        return int.tryParse(val.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      }
+
+      // Safe ID extraction
+      final dynamic rawId = widget.scan['id'];
+      int scanId = 0;
+      if (rawId is int) {
+        scanId = rawId;
+      } else if (rawId is String) {
+        scanId = int.tryParse(rawId) ?? 0;
+      }
+      
+      if (scanId == 0) throw Exception("Invalid Scan ID: $rawId");
+
       final updates = {
         'prediction': _predictionController.text.trim(),
-        'symptoms': _symptomsController.text.trim(), // Legacy field, keeping in sync
+        'symptoms': _symptomsController.text.trim(),
         'notes': _notesController.text.trim(),
-        'confidence': int.tryParse(_confidenceController.text.replaceAll('%', '').trim()) ?? 0,
-        
-        // New Fields
-        'patient_age': int.tryParse(_ageController.text.trim()) ?? 0,
+        'confidence': safeInt(_confidenceController.text),
+        'patient_age': safeInt(_ageController.text),
         'patient_gender': _gender,
         'suspected_disease': _suspectedDisease,
         'clinical_data': existingClinical,
       };
 
       final success = await adminService.updateScan(
-        widget.scan['id'] as int,
+        scanId,
         updates,
       );
 
@@ -144,7 +156,7 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
           widget.onUpdate();
           Navigator.pop(context);
         } else {
-          AppNotifications.showError(context, 'Failed to update scan');
+          AppNotifications.showError(context, 'Failed to update scan. Check logs.');
         }
       }
     } catch (e) {
@@ -400,7 +412,7 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
                     
                     // Questionnaire
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey.shade300),
                         borderRadius: BorderRadius.circular(8),
@@ -408,50 +420,57 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
                       child: Column(
                         children: _questions.map((q) {
                           final answerKey = "Q${q.id}";
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Row(
-                              children: [
-                                Expanded(child: Text("${q.id}. ${q.text}", style: const TextStyle(fontSize: 12))),
-                                if (_isEditing)
-                                  SizedBox(
-                                    width: 120,
-                                    child: SegmentedButton<String>(
-                                      segments: const [
-                                        ButtonSegment(value: 'Yes', label: Text('Yes')),
-                                        ButtonSegment(value: 'No', label: Text('No')),
-                                      ],
-                                      selected: { _questionnaireAnswers[answerKey] ?? 'No' },
-                                      onSelectionChanged: (Set<String> newSelection) {
-                                        setState(() {
-                                          _questionnaireAnswers[answerKey] = newSelection.first;
-                                        });
-                                      },
-                                      style: ButtonStyle(
-                                        visualDensity: VisualDensity.compact,
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: _questionnaireAnswers[answerKey] == 'Yes' ? Colors.red[50] : Colors.grey[100],
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: _questionnaireAnswers[answerKey] == 'Yes' ? Colors.red[200]! : Colors.grey[300]!),
-                                    ),
-                                    child: Text(
-                                      _questionnaireAnswers[answerKey] ?? 'No',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: _questionnaireAnswers[answerKey] == 'Yes' ? Colors.red[700] : Colors.grey[600],
-                                        fontSize: 12
-                                      ),
-                                    ),
+                          final isYes = _questionnaireAnswers[answerKey] == 'Yes';
+                          
+                          return Material(
+                            color: Colors.transparent,
+                            child: _isEditing
+                              ? SwitchListTile(
+                                  title: Text(
+                                    "${q.id}. ${q.text}",
+                                    style: TextStyle(fontSize: 13, color: Colors.grey[800]),
                                   ),
-                              ],
-                            ),
+                                  value: isYes,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      _questionnaireAnswers[answerKey] = val ? 'Yes' : 'No';
+                                    });
+                                  },
+                                  dense: true,
+                                  activeColor: Theme.of(context).primaryColor,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                                )
+                              : Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          "${q.id}. ${q.text}",
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: isYes ? Colors.red[50] : Colors.grey[100],
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: isYes ? Colors.red[200]! : Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          isYes ? 'Yes' : 'No',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: isYes ? Colors.red[700] : Colors.grey[600],
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                           );
                         }).toList(),
                       ),
