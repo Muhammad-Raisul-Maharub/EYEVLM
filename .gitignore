@@ -16,7 +16,15 @@ migrate_working_dir/
 *.apk
 
 # Analysis logs
+# Analysis logs
 analysis_*.txt
+analysis.txt
+core_analysis.txt
+build_log.txt
+gradle_error.txt
+emulators.txt
+*.out
+.metadata
 
 # IntelliJ related
 *.iml
