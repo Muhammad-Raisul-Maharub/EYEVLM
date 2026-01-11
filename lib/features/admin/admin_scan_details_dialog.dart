@@ -124,15 +124,24 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
       }
 
       // Safe ID extraction
+      // Safe ID extraction - allow integers or fallback to strings
       final dynamic rawId = widget.scan['id'];
-      int scanId = 0;
+      dynamic scanId;
       if (rawId is int) {
         scanId = rawId;
-      } else if (rawId is String) {
-        scanId = int.tryParse(rawId) ?? 0;
+      } else {
+        // Try parsing, if fails use string as is (for offline IDs potentially)
+        scanId = int.tryParse(rawId.toString()) ?? rawId.toString();
       }
       
-      if (scanId == 0) throw Exception("Invalid Scan ID: $rawId");
+      if (scanId == 0 || (scanId is String && scanId.isEmpty)) {
+         // Try one last desperate attempt if it's "0" string
+         if (rawId.toString() != "0") {
+             // It's a valid ID just failed parsing? No, continue.
+         } else {
+             throw Exception("Invalid Scan ID: $rawId"); 
+         }
+      }
 
       final updates = {
         'prediction': _predictionController.text.trim(),
@@ -145,18 +154,18 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
         'clinical_data': existingClinical,
       };
 
-      final success = await adminService.updateScan(
-        scanId,
+      final error = await adminService.updateScan(
+        scanId, // Dynamic handling in service now
         updates,
       );
 
       if (mounted) {
-        if (success) {
+        if (error == null) {
           AppNotifications.showSuccess(context, 'Scan updated successfully');
           widget.onUpdate();
           Navigator.pop(context);
         } else {
-          AppNotifications.showError(context, 'Failed to update scan. Check logs.');
+          AppNotifications.showError(context, 'Failed to update: $error');
         }
       }
     } catch (e) {
@@ -253,7 +262,8 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
 
   @override
   Widget build(BuildContext context) {
-    final createdAt = DateTime.tryParse(widget.scan['created_at'] ?? '');
+    // Fix: Convert to local time for display
+    final createdAt = DateTime.tryParse(widget.scan['created_at'] ?? '')?.toLocal();
     final imageUrl = widget.scan['image_url'] ?? '';
     final userId = widget.scan['user_id'] ?? 'Unknown';
     

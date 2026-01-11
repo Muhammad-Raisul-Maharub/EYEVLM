@@ -159,6 +159,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         AppNotifications.showError(context, 'Error loading history: $e');
       }
     } finally {
+      // Ensure loading is turned off if this wasn't a silent background refresh
       if (mounted && !silent) {
         setState(() => _isLoading = false);
       }
@@ -496,7 +497,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   /// Build the scans list widget (replaces StreamBuilder)
   Widget _buildScansList() {
-    if (_isLoading) {
+    // Fix: Only show blocking loader if we have NO data. 
+    // If we have data, we show it (and maybe a top loader or just let it update).
+    if (_isLoading && _scans.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     
@@ -625,6 +628,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                             ),
                           ),
                           const SizedBox(height: 4),
+                          // Added Date Display
+                          Text(
+                            scan['created_at'] != null 
+                              ? DateFormat('MMM d, yyyy • h:mm a').format(DateTime.parse(scan['created_at']).toLocal())
+                              : 'Unknown Date',
+                            style: GoogleFonts.inter(
+                              color: Colors.grey[500],
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
                           Row(
                             children: [
                               Text(
@@ -694,34 +708,40 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   /// Build thumbnail widget supporting both local files and URLs
   Widget _buildThumbnail(Map<String, dynamic> scan) {
     final imageUrl = scan['image_url'] ?? '';
-    
-    // Check if it's a local file path
-    if (!kIsWeb && imageUrl is String && imageUrl.startsWith('/')) {
-      return Image.file(
-        File(imageUrl),
-        height: 60,
-        width: 60,
-        fit: BoxFit.cover,
-        errorBuilder: (c, e, s) => Container(
-          height: 60, width: 60, 
-          color: Colors.grey[200], 
-          child: const Icon(Icons.broken_image, color: Colors.grey),
-        ),
-      );
+    // Handle list of images if available
+    String displayUrl = imageUrl;
+    if (displayUrl.isEmpty && scan['image_urls'] != null) {
+         try {
+           final list = scan['image_urls'] as List;
+           if (list.isNotEmpty) displayUrl = list.first.toString();
+         } catch (_) {}
     }
-    
-    // Network URL
-    return Image.network(
-      imageUrl,
-      height: 60,
-      width: 60,
-      fit: BoxFit.cover,
-      errorBuilder: (c, e, s) => Container(
-        height: 60, width: 60, 
-        color: Colors.grey[200], 
-        child: const Icon(Icons.broken_image, color: Colors.grey),
-      ),
-    );
+
+    if (displayUrl.isEmpty) {
+      return Container(width: 60, height: 60, color: Colors.grey[200], child: const Icon(Icons.image));
+    }
+
+    // Check if it's a URL
+    bool isUrl = displayUrl.startsWith('http') || displayUrl.startsWith('https');
+
+    if (isUrl) {
+       return Image.network(
+          displayUrl,
+          width: 60, 
+          height: 60, 
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(width: 60, height: 60, color: Colors.grey[200], child: const Icon(Icons.broken_image)),
+       );
+    } else {
+       // Assume local file path
+       return Image.file(
+          File(displayUrl),
+          width: 60,
+          height: 60,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(width: 60, height: 60, color: Colors.grey[200], child: const Icon(Icons.broken_image)),
+       );
+    }
   }
 
   Future<void> _downloadPdf(Map<String, dynamic> scan) async {

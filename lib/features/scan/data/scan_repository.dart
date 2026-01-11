@@ -343,6 +343,13 @@ class ScanRepository {
           await dbHelper.markAsSynced(scan['id'].toString());
         }
 
+        // Sort just in case API didn't (ensure newest first)
+        scans.sort((a, b) {
+           final da = DateTime.tryParse(a['created_at'].toString()) ?? DateTime(1970);
+           final db = DateTime.tryParse(b['created_at'].toString()) ?? DateTime(1970);
+           return db.compareTo(da); // Newest first
+        });
+
         return scans;
       } catch (e) {
         debugPrint("⚠️ Online fetch failed, falling back to local DB: $e");

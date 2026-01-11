@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -388,18 +389,104 @@ class OfflineSyncService {
       }
     }
     
-    // Insert record
+    // ========== RUN AI INFERENCE ==========
+    String prediction = 'Pending';
+    double confidence = 0.0;
+    Map<String, dynamic>? confidenceMap;
+    String? explanation;
+
+    try {
+      // Primary image URL (first image)
+      final String primaryImageUrl = uploadedImageUrls.isNotEmpty ? uploadedImageUrls.first : '';
+      
+      // Production Backend URL (Render)
+      const String backendUrl = 'https://eyevlm-backend.onrender.com/infer'; 
+      
+      // Use first image for inference
+      final inferencePayload = jsonEncode({
+        "image_url": primaryImageUrl,
+        "symptoms": formData['suspected_disease'],
+        "language": "en" 
+      });
+
+      // Get current session token for Auth
+      final session = supabase.auth.currentSession;
+      final token = session?.accessToken;
+
+      if (token == null) {
+        debugPrint("⚠️ No Auth Token found. Skipping AI Analysis during sync.");
+      } else {
+        // Retry mechanism with exponential backoff for Render cold starts
+        const int maxRetries = 2; // Fewer retries for background sync
+        const Duration baseTimeout = Duration(seconds: 90); 
+        
+        http.Response? response;
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            debugPrint("🔄 Sync AI Inference attempt $attempt/$maxRetries...");
+            
+            response = await http.post(
+              Uri.parse(backendUrl),
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer $token",
+              },
+              body: inferencePayload,
+            ).timeout(baseTimeout);
+            
+            if (response.statusCode == 200) {
+              break; // Success
+            } 
+            if (attempt < maxRetries) await Future.delayed(Duration(seconds: 5));
+          } catch (e) {
+            debugPrint("⚠️ Sync AI attempt $attempt failed: $e");
+            if (attempt < maxRetries) await Future.delayed(Duration(seconds: 5));
+          }
+        }
+
+        if (response != null && response.statusCode == 200) {
+          final result = jsonDecode(response.body);
+          prediction = result['predicted_class'] ?? 'Pending';
+          confidenceMap = result['confidence'];
+          explanation = result['explanation_text'];
+          
+          if (confidenceMap != null && confidenceMap.containsKey(prediction)) {
+            confidence = (confidenceMap[prediction] as num).toDouble();
+          }
+          
+          debugPrint("✅ AI Analysis Complete during Sync: $prediction ($confidence)");
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠️ Failed to connect to AI Backend during sync: $e");
+    }
+
+    // Insert record with AI results
     final clinicalData = Map<String, dynamic>.from(formData['clinical_data'] ?? {});
     clinicalData['attachments'] = attachmentLinks;
     clinicalData['synced_from_offline'] = true;
+    clinicalData['ai_explanation'] = explanation;
+    clinicalData['ai_confidence_map'] = confidenceMap;
     
+    // Use original creation time if available, otherwise now
+    String createdAt = DateTime.now().toUtc().toIso8601String();
+    if (formData['created_at'] != null) {
+      try {
+         // parsed as local, converted to utc for storage
+         createdAt = DateTime.parse(formData['created_at']).toUtc().toIso8601String(); 
+      } catch (e) {
+         debugPrint("⚠️ Could not parse original created_at: $e");
+      }
+    }
+
     await supabase.from('scans').insert({
       'user_id': user.id,
-      'created_at': DateTime.now().toIso8601String(),
+      'created_at': createdAt,
       'image_url': uploadedImageUrls.isNotEmpty ? uploadedImageUrls.first : '',
       'image_urls': uploadedImageUrls,
-      'prediction': 'Pending',
-      'confidence': 0.0,
+      'prediction': prediction,
+      'confidence': confidence,
       'symptoms': formData['suspected_disease'],
       'clinical_data': clinicalData,
       'patient_age': formData['patient_age'],

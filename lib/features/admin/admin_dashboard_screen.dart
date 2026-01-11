@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -305,7 +306,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
         
         // Content
         Expanded(
-          child: _isLoading
+          child: (_isLoading && _scans.isEmpty)
               ? const Center(child: CircularProgressIndicator())
               : _error != null
                   ? Center(
@@ -363,7 +364,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     final scanId = scan['id'] as int;
     final prediction = scan['prediction'] ?? 'Unknown';
     final confidence = scan['confidence'] ?? 0;
-    final createdAt = DateTime.tryParse(scan['created_at'] ?? '');
+    // Fix: Convert to local time for display
+    final createdAt = DateTime.tryParse(scan['created_at'] ?? '')?.toLocal();
     final imageUrl = scan['image_url'] ?? '';
     final userId = scan['user_id'] ?? '';
     final isSelected = _selectedScanIds.contains(scanId);
@@ -393,25 +395,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
               // Thumbnail
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: imageUrl.isNotEmpty
-                    ? Image.network(
-                        imageUrl,
-                        width: 60,
-                        height: 60,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 60,
-                          height: 60,
-                          color: Colors.grey[200],
-                          child: const Icon(Icons.image_not_supported),
-                        ),
-                      )
-                    : Container(
-                        width: 60,
-                        height: 60,
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.image),
-                      ),
+                child: _buildThumbnail(imageUrl, 60, 60),
               ),
               const SizedBox(width: 12),
               
@@ -483,7 +467,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   }
 
   Widget _buildStatisticsTab() {
-    if (_isLoading) {
+    if (_isLoading && _stats.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -662,5 +646,33 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     if (value >= 80) return Colors.green;
     if (value >= 60) return Colors.orange;
     return Colors.red;
+  }
+
+  Widget _buildThumbnail(String pathOrUrl, double width, double height) {
+    if (pathOrUrl.isEmpty) {
+        return Container(width: width, height: height, color: Colors.grey[200], child: const Icon(Icons.image));
+    }
+    
+    // Check if it's a URL
+    bool isUrl = pathOrUrl.startsWith('http') || pathOrUrl.startsWith('https');
+
+    if (isUrl) {
+      return Image.network(
+        pathOrUrl,
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(width: width, height: height, color: Colors.grey[200], child: const Icon(Icons.broken_image)),
+      );
+    } else {
+      // Assume local file
+      return Image.file(
+        File(pathOrUrl),
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(width: width, height: height, color: Colors.grey[200], child: const Icon(Icons.broken_image)),
+      );
+    }
   }
 }

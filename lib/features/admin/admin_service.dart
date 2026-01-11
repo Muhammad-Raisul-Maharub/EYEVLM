@@ -149,7 +149,8 @@ class AdminService {
   }
 
   /// Update a scan record
-  Future<bool> updateScan(int scanId, Map<String, dynamic> updates) async {
+  /// Returns null if successful, or error message string if failed
+  Future<String?> updateScan(dynamic scanId, Map<String, dynamic> updates) async {
     try {
       // Add updated timestamp
       updates['updated_at'] = DateTime.now().toIso8601String();
@@ -160,10 +161,10 @@ class AdminService {
           .eq('id', scanId);
       
       debugPrint('✅ Scan $scanId updated successfully');
-      return true;
+      return null; // Success
     } catch (e) {
       debugPrint('❌ AdminService.updateScan error: $e');
-      return false;
+      return e.toString();
     }
   }
 
