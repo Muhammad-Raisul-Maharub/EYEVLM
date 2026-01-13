@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'dart:async'; // For TimeoutException
 import '../../core/utils/app_notifications.dart';
 import '../../core/services/pdf_service.dart';
 import 'admin_service.dart';
@@ -212,7 +213,7 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
       final adminService = ref.read(adminServiceProvider);
       
       final success = await adminService.deleteScan(
-        widget.scan['id'] as int,
+        widget.scan['id'],
         widget.scan['image_url'],
       );
 
@@ -237,6 +238,9 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
   }
 
   Future<void> _downloadReport() async {
+    // Prevent double taps
+    if (_isLoading) return;
+    
     setState(() => _isLoading = true);
     try {
       if (mounted) {
@@ -244,7 +248,11 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
       }
       
       // Use the PdfService to generate, save, and share data
-      await PdfService().generateAndShareReport(widget.scan);
+      // Add timeout to prevent hanging
+      await PdfService().generateAndShareReport(widget.scan).timeout(
+        const Duration(seconds: 45),
+        onTimeout: () => throw TimeoutException("PDF generation timed out"),
+      );
       
       if (mounted) {
         AppNotifications.showSuccess(context, "Report generated & shared!");
@@ -384,7 +392,7 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
                           child: IgnorePointer(
                             ignoring: !_isEditing,
                             child: DropdownButtonFormField<String>(
-                              value: _gender,
+                              initialValue: _gender,
                               decoration: InputDecoration(
                                 labelText: 'Gender',
                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -403,7 +411,7 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
                     IgnorePointer(
                       ignoring: !_isEditing,
                       child: DropdownButtonFormField<String>(
-                        value: _suspectedDisease,
+                        initialValue: _suspectedDisease,
                         decoration: InputDecoration(
                           labelText: 'Suspected Disease Category',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -447,7 +455,7 @@ class _AdminScanDetailsDialogState extends ConsumerState<AdminScanDetailsDialog>
                                     });
                                   },
                                   dense: true,
-                                  activeColor: Theme.of(context).primaryColor,
+                                  activeThumbColor: Theme.of(context).primaryColor,
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                                 )
                               : Padding(

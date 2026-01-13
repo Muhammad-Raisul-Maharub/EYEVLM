@@ -17,7 +17,10 @@ class TimelineTile extends StatelessWidget {
     this.isFirst = false,
     this.isLast = false,
     this.isHighRisk = false,
+    this.isPending = false,
   });
+
+  final bool isPending;
 
   @override
   Widget build(BuildContext context) {
@@ -43,11 +46,16 @@ class TimelineTile extends StatelessWidget {
                   width: 16,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isHighRisk ? Colors.redAccent : AppColors.lightPrimary,
+                    // Grey for pending, Red for high risk, Green/Primary for normal
+                    color: isPending 
+                        ? Colors.grey.shade400 
+                        : (isHighRisk ? Colors.redAccent : AppColors.lightPrimary),
                     border: Border.all(color: Colors.white, width: 3),
                     boxShadow: [
                       BoxShadow(
-                        color: (isHighRisk ? Colors.red : AppColors.lightPrimary).withAlpha(100),
+                        color: (isPending 
+                            ? Colors.grey 
+                            : (isHighRisk ? Colors.red : AppColors.lightPrimary)).withAlpha(100),
                         blurRadius: 6,
                         spreadRadius: 2,
                       )

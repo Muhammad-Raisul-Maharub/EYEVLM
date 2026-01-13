@@ -1,6 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'features/auth/login_screen.dart';
-import 'features/submission/scan_result_screen.dart';
+
 import 'features/scan/presentation/scan_flow_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/history/history_screen.dart';
@@ -52,13 +52,7 @@ final router = GoRouter(
                   path: 'scan',
                   builder: (context, state) => const ScanFlowScreen(),
                 ),
-                GoRoute(
-                  path: 'result',
-                  builder: (context, state) {
-                     final result = state.extra as Map<String, dynamic>;
-                     return ScanResultScreen(result: result);
-                  },
-                ),
+
               ],
             ),
           ],

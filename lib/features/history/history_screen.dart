@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 // Added: Uint8List
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,7 +14,9 @@ import '../../core/localization/app_strings.dart';
 import '../../core/providers/refresh_provider.dart';
 import '../../core/utils/app_notifications.dart'; // Import
 import '../../core/services/pdf_service.dart';
-import '../../core/database_helper.dart'; // Local database
+// Local database
+import '../scan/data/scan_repository.dart'; // Unified Data Repository
+import '../../core/services/offline_sync_service.dart'; // Sync Service
 import 'history_details_dialog.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
@@ -61,156 +62,38 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     super.dispose();
   }
 
-  /// Load scans from local database (offline-first) AND Supabase for complete data
+  /// Load scans using the unified repository (Offline + Online Merged)
   Future<void> _loadScans({bool silent = false}) async {
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    debugPrint("🔄 HistoryScreen: Loading scans for User ID: $userId");
-
-    if (userId == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-
-    // If silent is true, we don't show the loading spinner, 
-    // but we still fetch data in background
+    // If silent is true, we don't show the loading spinner
     if (!silent) {
        setState(() => _isLoading = true);
     }
 
     try {
-      if (kIsWeb) {
-        // Web: Always use Supabase (no local DB)
-        final response = await Supabase.instance.client
-            .from('scans')
-            .select()
-            .eq('user_id', userId)
-            .order('created_at', ascending: false);
-        
-        if (mounted) {
-          setState(() {
-            _scans = List<Map<String, dynamic>>.from(response);
-            _isLoading = false;
-          });
-        }
-      } else {
-        // Mobile: Load from local DB first (instant), then sync from Supabase
-        final localScans = await DatabaseHelper.instance.getAllScans(userId: userId);
-        
-        // Show local scans immediately for responsive UI (if not silent refresh)
-        if (mounted && !silent) {
-          setState(() {
-            _scans = localScans;
-            _isLoading = false;
-          });
-        }
-        debugPrint("✅ Loaded ${localScans.length} scans from local database");
-        
-        // Also fetch from Supabase and merge (remote data takes precedence)
-        try {
-          final remoteScans = await Supabase.instance.client
-              .from('scans')
-              .select()
-              .eq('user_id', userId)
-              .order('created_at', ascending: false);
-          
-          final remoteList = List<Map<String, dynamic>>.from(remoteScans);
-          debugPrint("📡 Fetched ${remoteList.length} scans from Supabase");
-          
-          // --- PRUNING LOGIC (Sync Deletions) ---
-          // Use 'id' (int) to identify synced scans. 
-          // If a scan is in Local DB (and is marked synced or has URL) but NOT in Remote List, it was deleted on server.
-          // We must delete it locally.
-          final remoteIds = remoteList.map((s) => s['id'].toString()).toSet();
-          
-          for (final local in localScans) {
-             final localId = local['id'].toString();
-             final isSynced = local['is_synced'] == 1 || (local['image_url'] != null && local['image_url'].toString().startsWith('http'));
-             
-             // If it was synced before, but is now missing from remote -> It's deleted.
-             if (isSynced && !remoteIds.contains(localId)) {
-                debugPrint("🗑️ Pruning deleted scan from local DB: ID $localId");
-                await DatabaseHelper.instance.deleteScan(local['id']);
-             }
-          }
-          
-          // Refetch local scans after pruning to ensure we merge correctly
-          final prunedLocalScans = await DatabaseHelper.instance.getAllScans(userId: userId);
-
-          // Merge: Use remote data if available (has actual predictions)
-          final merged = _mergeScans(prunedLocalScans, remoteList);
-          
-          if (mounted) {
-            setState(() {
-               _scans = merged;
-               _isLoading = false;
-            });
-          }
-          debugPrint("🔄 Merged to ${merged.length} total scans");
-        } catch (e) {
-          debugPrint("⚠️ Could not sync from Supabase: $e");
-          // On error, just ensure loading is off and we show what we have
-          if (mounted) setState(() => _isLoading = false);
-        }
+      // Use unified repository method that handles merging, sorting, and offline logic
+      final mergedScans = await ScanRepository().getAllScansMerged();
+      
+      if (mounted) {
+        setState(() {
+          _scans = mergedScans;
+          _isLoading = false;
+        });
       }
+      debugPrint("✅ HistoryScreen: Loaded ${mergedScans.length} scans");
     } catch (e) {
       debugPrint("❌ Error loading scans: $e");
       if (mounted) {
         setState(() => _isLoading = false);
-        AppNotifications.showError(context, 'Error loading history: $e');
+        if (!silent) AppNotifications.showError(context, 'Error loading history: $e');
       }
     } finally {
-      // Ensure loading is turned off if this wasn't a silent background refresh
       if (mounted && !silent) {
         setState(() => _isLoading = false);
       }
     }
   }
   
-  /// Merge local and remote scans, preferring remote data with actual predictions
-  List<Map<String, dynamic>> _mergeScans(
-    List<Map<String, dynamic>> localScans,
-    List<Map<String, dynamic>> remoteScans,
-  ) {
-    // 1. Create a map of remote scans by ID (for strict matching)
-    final Map<String, Map<String, dynamic>> remoteById = {};
-    for (final scan in remoteScans) {
-      remoteById[scan['id'].toString()] = scan;
-    }
-    
-    // 2. Start with all Remote scans (Primary Source)
-    final List<Map<String, dynamic>> merged = List.from(remoteScans);
-    
-    // 3. Add Local scans ONLY if they are pending (not synced)
-    for (final local in localScans) {
-      final localId = local['id'].toString();
-      // If remote has this ID, we already added it (from remote list), so skip local
-      if (remoteById.containsKey(localId)) continue;
 
-      // Special handling for legacy/offline scans without matching IDs
-      // If a local scan has an image path, check if a remote scan has that same file name in its URL
-      bool isDuplicate = false;
-      final localPath = local['image_url']?.toString() ?? '';
-      
-      if (localPath.startsWith('/')) { // It's a file path
-         final fileName = localPath.split('/').last;
-         // Check if any remote scan URL contains this filename
-         isDuplicate = remoteScans.any((r) => (r['image_url']?.toString() ?? '').contains(fileName));
-      }
-
-      if (!isDuplicate) {
-         merged.add(local);
-      }
-    }
-    
-    // 4. Sort by created_at descending
-    merged.sort((a, b) {
-      final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime(1970);
-      final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime(1970);
-      return bDate.compareTo(aDate);
-    });
-    
-    return merged;
-  }
 
   // Robust Delete Function - Deletes image, attachments, and database record
   Future<void> deleteScan(dynamic scanId, String imageUrl) async {
@@ -476,18 +359,76 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       ),
       body: Stack(
         children: [
-          RefreshIndicator(
-            onRefresh: () async {
-              await _loadScans(silent: true);
-            },
-            child: _buildScansList(),
+          Column(
+            children: [
+              // Sync Indicator Banner
+              ValueListenableBuilder<bool>(
+                valueListenable: OfflineSyncService.instance.isSyncingNotifier,
+                builder: (context, isSyncing, child) {
+                  if (!isSyncing) return const SizedBox.shrink();
+                  return Container(
+                    color: Colors.orange.shade50,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 12, 
+                          height: 12, 
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange.shade700)
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          "Syncing scans to cloud...",
+                          style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    await _loadScans(silent: true);
+                  },
+                  child: _buildScansList(),
+                ),
+              ),
+            ],
           ),
           
           if (_isDeleting || _isDownloading)
             Container(
-              color: Colors.black.withAlpha(77),
-              child: const Center(
-                child: CircularProgressIndicator(),
+              color: Colors.black.withAlpha(150),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.white),
+                    const SizedBox(height: 24),
+                    Text(
+                      _isDeleting ? "Deleting..." : "Generating Report...",
+                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 24),
+                    TextButton.icon(
+                      onPressed: () {
+                         // Emergency escape hatch
+                         setState(() {
+                           _isDeleting = false;
+                           _isDownloading = false;
+                         });
+                      },
+                      icon: const Icon(Icons.close, color: Colors.white70),
+                      label: const Text("Cancel", style: TextStyle(color: Colors.white70)),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        backgroundColor: Colors.white.withAlpha(26),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -530,7 +471,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         final scan = scans[index];
         // Calculate number based on total count to keep it absolute (Newest = #Total, Oldest = #1)
         final visibleNumber = scans.length - index;
-        final prediction = scan['prediction'] ?? 'Unknown';
+        
+        final isPending = scan['is_synced'] == 0 && (scan['image_url'] == null || !scan['image_url'].toString().startsWith('http'));
+        final prediction = isPending ? 'Pending Sync' : (scan['prediction'] ?? 'Unknown');
+        
         final isHealthy = prediction == 'Healthy';
         final confidence = scan['confidence'] != null 
             ? (scan['confidence'] * 100).toInt() 

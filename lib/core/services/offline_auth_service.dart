@@ -12,7 +12,7 @@ class OfflineAuthService {
 
   /// Save credentials after successful online login
   /// Stores a hash of email+password and the userId
-  Future<void> saveCredentials(String email, String password, String userId) async {
+  Future<void> saveCredentials(String email, String password, String userId, [Map<String, dynamic>? metadata]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       
@@ -24,6 +24,7 @@ class OfflineAuthService {
         'email': email.toLowerCase().trim(),
         'hash': hash,
         'userId': userId,
+        'userMetadata': metadata ?? {},
       }));
       await prefs.setInt(_lastLoginKey, DateTime.now().millisecondsSinceEpoch);
       
@@ -92,6 +93,7 @@ class OfflineAuthService {
       return stored['email'] as String?;
     } catch (e) {
     }
+    return null;
   }
 
   /// Get the cached userId if exists
@@ -105,6 +107,20 @@ class OfflineAuthService {
       return stored['userId'] as String?;
     } catch (e) {
       return null;
+    }
+  }
+
+  /// Get cached metadata
+  Future<Map<String, dynamic>> getCachedMetadata() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final storedJson = prefs.getString(_credentialsKey);
+      if (storedJson == null) return {};
+      
+      final stored = jsonDecode(storedJson) as Map<String, dynamic>;
+      return (stored['userMetadata'] as Map<String, dynamic>?) ?? {};
+    } catch (e) {
+      return {};
     }
   }
 

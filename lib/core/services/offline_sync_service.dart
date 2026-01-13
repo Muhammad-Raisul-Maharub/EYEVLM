@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -27,6 +26,9 @@ class OfflineSyncService {
   
   // Notifier for pending count changes
   final ValueNotifier<int> pendingCountNotifier = ValueNotifier(0);
+  
+  // Notifier for sync status
+  final ValueNotifier<bool> isSyncingNotifier = ValueNotifier(false);
   
   OfflineSyncService._();
   
@@ -227,6 +229,7 @@ class OfflineSyncService {
     }
     
     _isSyncing = true;
+    isSyncingNotifier.value = true; // Update notifier
     int successCount = 0;
     int failCount = 0;
     
@@ -311,6 +314,7 @@ class OfflineSyncService {
       }
     } finally {
       _isSyncing = false;
+      isSyncingNotifier.value = false; // Reset notifier
       await _updatePendingCount();
     }
     

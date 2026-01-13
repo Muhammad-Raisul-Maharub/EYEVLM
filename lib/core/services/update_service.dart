@@ -17,6 +17,7 @@ class UpdateService {
   static const String repo = "EYEVLM";
   
   /// Checks GitHub Releases for available updates
+  /// Checks GitHub Releases for available updates
   Future<Map<String, String>?> checkForUpdate() async {
     if (!Platform.isAndroid) {
       debugPrint("📱 UpdateService: Skipping on non-Android");
@@ -25,8 +26,11 @@ class UpdateService {
     
     try {
       PackageInfo packageInfo = await PackageInfo.fromPlatform();
-      Version currentVersion = Version.parse(packageInfo.version);
-      debugPrint("📱 Current version: $currentVersion");
+      // localVersion usually just "1.5.8"
+      Version localVersion = Version.parse(packageInfo.version);
+      int localBuildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
+      
+      debugPrint("📱 Current App: $localVersion (Build: $localBuildNumber)");
 
       final response = await http.get(
         Uri.parse('https://api.github.com/repos/$owner/$repo/releases/latest'),
@@ -35,14 +39,42 @@ class UpdateService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         String tagName = data['tag_name'] ?? '';
+        
+        // Clean tag (remove 'v')
         if (tagName.startsWith('v')) tagName = tagName.substring(1);
         if (tagName.isEmpty) return null;
         
-        Version latestVersion = Version.parse(tagName);
-        debugPrint("🌐 Latest: $latestVersion");
+        // Extract Remote Version and Build Number
+        // Expected format: "1.5.8+25" or just "1.5.8"
+        String remoteBaseVersionStr = tagName;
+        int remoteBuildNumber = 0;
 
-        if (latestVersion > currentVersion) {
-          debugPrint("🆕 Update available!");
+        if (tagName.contains('+')) {
+          final parts = tagName.split('+');
+          remoteBaseVersionStr = parts[0];
+          if (parts.length > 1) {
+            remoteBuildNumber = int.tryParse(parts[1]) ?? 0;
+          }
+        }
+        
+        Version remoteVersion = Version.parse(remoteBaseVersionStr);
+        debugPrint("🌐 Remote Tag: $tagName -> Ver: $remoteVersion, Build: $remoteBuildNumber");
+
+        bool isUpdateAvailable = false;
+
+        // 1. Compare Base Versions (e.g., 1.5.9 > 1.5.8)
+        if (remoteVersion > localVersion) {
+          isUpdateAvailable = true;
+        } 
+        // 2. If Base Versions match, compare Build Numbers (e.g., 1.5.8+26 > 1.5.8+25)
+        else if (remoteVersion == localVersion) {
+          if (remoteBuildNumber > localBuildNumber) {
+            isUpdateAvailable = true;
+          }
+        }
+
+        if (isUpdateAvailable) {
+          debugPrint("🆕 Update available! ($remoteVersion+$remoteBuildNumber > $localVersion+$localBuildNumber)");
           List assets = data['assets'] ?? [];
           for (var asset in assets) {
             if (asset['name']?.toString().endsWith('.apk') ?? false) {
@@ -53,6 +85,8 @@ class UpdateService {
               };
             }
           }
+        } else {
+           debugPrint("✅ App is up to date.");
         }
       }
     } catch (e) {

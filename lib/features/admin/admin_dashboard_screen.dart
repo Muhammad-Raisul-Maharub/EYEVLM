@@ -10,6 +10,7 @@ import '../../core/providers/connectivity_provider.dart';
 import '../auth/auth_service.dart';
 import 'admin_service.dart';
 import 'admin_scan_details_dialog.dart';
+import '../../core/services/offline_sync_service.dart';
 
 /// Admin Dashboard Screen
 /// Provides admin users with a view of all scans from all users
@@ -29,7 +30,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   bool _isLoading = true;
   String? _error;
   String _searchQuery = '';
-  Set<int> _selectedScanIds = {};
+  Set<dynamic> _selectedScanIds = {};
   
   final TextEditingController _searchController = TextEditingController();
 
@@ -110,7 +111,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     _loadData();
   }
 
-  void _toggleSelection(int scanId) {
+  void _toggleSelection(dynamic scanId) {
     setState(() {
       if (_selectedScanIds.contains(scanId)) {
         _selectedScanIds.remove(scanId);
@@ -125,7 +126,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       if (_selectedScanIds.length == _scans.length) {
         _selectedScanIds.clear();
       } else {
-        _selectedScanIds = _scans.map((s) => s['id'] as int).toSet();
+        _selectedScanIds = _scans.map((s) => s['id']).toSet();
       }
     });
   }
@@ -251,6 +252,33 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
               ],
             ),
           ),
+          
+          // Sync Indicator
+          ValueListenableBuilder<bool>(
+            valueListenable: OfflineSyncService.instance.isSyncingNotifier,
+            builder: (context, isSyncing, child) {
+              if (!isSyncing) return const SizedBox.shrink();
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                color: Colors.blue.shade50,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 12, height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Syncing offline scans...",
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.blue.shade700),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -361,7 +389,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   }
 
   Widget _buildScanCard(Map<String, dynamic> scan) {
-    final scanId = scan['id'] as int;
+    final dynamic scanId = scan['id']; // Dynamic to handle local (String) and remote (Int) IDs
     final prediction = scan['prediction'] ?? 'Unknown';
     final confidence = scan['confidence'] ?? 0;
     // Fix: Convert to local time for display
@@ -424,7 +452,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            '${confidence}%',
+                            '$confidence%',
                             style: TextStyle(
                               color: _getConfidenceColor(confidence),
                               fontSize: 12,
@@ -598,6 +626,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   }
 
   Widget _buildPredictionBar(String label, int count, String percentage) {
+    if (count == 0) return const SizedBox.shrink(); // Hide empty
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(

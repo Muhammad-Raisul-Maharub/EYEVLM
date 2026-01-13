@@ -7,20 +7,67 @@ import 'package:eyevlm_app/features/profile/widgets/timeline_tile.dart';
 import 'package:eyevlm_app/core/utils/app_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:eyevlm_app/features/scan/data/scan_repository.dart';
+import 'package:eyevlm_app/core/services/offline_sync_service.dart';
+import 'package:eyevlm_app/core/providers/refresh_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final ScrollController _scrollController = ScrollController();
+  List<Map<String, dynamic>> _scans = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileData();
+
+    // Listen for sync completion to refresh data
+    OfflineSyncService.instance.isSyncingNotifier.addListener(_onSyncChanged);
+  }
+
+  @override
+  void dispose() {
+    OfflineSyncService.instance.isSyncingNotifier.removeListener(_onSyncChanged);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onSyncChanged() {
+    // Reload when sync finishes (isSyncing goes false)
+    if (!OfflineSyncService.instance.isSyncingNotifier.value) {
+      _loadProfileData();
+    }
+  }
+
+  Future<void> _loadProfileData() async {
+    try {
+      final scans = await ScanRepository().getAllScansMerged();
+      if (mounted) {
+        setState(() {
+          _scans = scans;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading profile data: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
 
   @override
   Widget build(BuildContext context) {
+    // Listen for manual refreshes
+    ref.listen(historyRefreshProvider, (_, __) => _loadProfileData());
+
     final user = Supabase.instance.client.auth.currentUser;
     final email = user?.email ?? "Guest User";
     // Extract name if available or use a placeholder
@@ -117,21 +164,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   
                   const SizedBox(height: 20),
                   // Stats Row
-                  StreamBuilder<List<Map<String, dynamic>>>(
-                    stream: Supabase.instance.client.from('scans').stream(primaryKey: ['id']).eq('user_id', Supabase.instance.client.auth.currentUser!.id),
-                    builder: (context, snapshot) {
-                      final count = snapshot.data?.length ?? 0;
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildHeaderStat("Scans", "$count"),
-                          Container(height: 30, width: 1, color: Colors.white30, margin: const EdgeInsets.symmetric(horizontal: 20)),
-                          _buildHeaderStat("Health", "Tracked"),
-                          Container(height: 30, width: 1, color: Colors.white30, margin: const EdgeInsets.symmetric(horizontal: 20)),
-                          _buildHeaderStat("Member", "Free"),
-                        ],
-                      );
-                    }
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildHeaderStat("Scans", "${_scans.length}"),
+                      Container(height: 30, width: 1, color: Colors.white30, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                      _buildHeaderStat("Health", "Tracked"),
+                      Container(height: 30, width: 1, color: Colors.white30, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                      _buildHeaderStat("Member", "Free"),
+                    ],
                   ),
                 ],
               ),
@@ -152,39 +193,80 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildMedicalHistory() {
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) return const SizedBox.shrink();
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Recent Activity", style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 16),
-          StreamBuilder<List<Map<String, dynamic>>>(
-            stream: Supabase.instance.client.from('scans').stream(primaryKey: ['id']).eq('user_id', userId).order('created_at', ascending: false).limit(2),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Text("No recent scans found.", style: TextStyle(color: Colors.grey));
-              }
-              final scans = snapshot.data!;
-              return Column(
-                children: scans.map((scan) {
-                   final date = DateTime.parse(scan['created_at']);
-                   final prediction = scan['prediction'] ?? 'Processing';
-                   return TimelineTile(
-                     title: prediction,
-                     date: DateFormat('MMM d, h:mm a').format(date),
-                     description: scan['suspected_disease'] ?? 'Routine Scan',
-                     isHighRisk: prediction != 'Healthy' && prediction != 'Pending',
-                     isFirst: scans.first == scan,
-                     isLast: scans.last == scan,
-                   );
-                }).toList(),
+          // Sync Indicator
+          ValueListenableBuilder<bool>(
+            valueListenable: OfflineSyncService.instance.isSyncingNotifier,
+            builder: (context, isSyncing, child) {
+              if (!isSyncing) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 16, 
+                      height: 16, 
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange.shade700)
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        "Syncing offline scans...",
+                        style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                    ValueListenableBuilder<int>(
+                      valueListenable: OfflineSyncService.instance.pendingCountNotifier,
+                      builder: (context, count, _) {
+                        return Text(
+                          "$count pending",
+                          style: TextStyle(color: Colors.orange.shade800, fontSize: 12),
+                        );
+                      }
+                    ),
+                  ],
+                ),
               );
             },
           ),
+          
+          Text("Recent Activity", style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 16),
+          
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator())
+          else if (_scans.isEmpty)
+            const Text("No recent scans found.", style: TextStyle(color: Colors.grey))
+          else
+            Column(
+              children: _scans.take(3).map((scan) {
+                 final date = DateTime.tryParse(scan['created_at'].toString()) ?? DateTime.now();
+                 final prediction = scan['prediction'] ?? 'Processing';
+                 
+                 // Check if it's an offline/pending scan
+                 final isPending = scan['is_synced'] == 0 && (scan['image_url'] == null || !scan['image_url'].toString().startsWith('http'));
+
+                 return TimelineTile(
+                   title: prediction,
+                   date: DateFormat('MMM d, h:mm a').format(date.toLocal()),
+                   description: isPending ? "Waiting to sync..." : (scan['suspected_disease'] ?? 'Routine Scan'),
+                   isHighRisk: prediction != 'Healthy' && prediction != 'Pending',
+                   isFirst: _scans.first == scan,
+                   isLast: _scans.take(3).last == scan,
+                   isPending: isPending,
+                 );
+              }).toList(),
+            ),
         ],
       ),
     );

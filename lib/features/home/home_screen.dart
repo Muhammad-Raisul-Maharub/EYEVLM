@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../core/widgets/responsive_wrapper.dart'; // Added: Responsive Support
 import '../../core/services/update_service.dart'; // Auto-Update Engine
+import '../../core/services/offline_sync_service.dart';
 
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -142,9 +143,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: ResponsiveWrapper(
-        mobileBody: _buildMobileLayout(context),
-        webBody: _buildWebLayout(context),
+      body: Column(
+        children: [
+          // Sync Indicator
+          ValueListenableBuilder<bool>(
+            valueListenable: OfflineSyncService.instance.isSyncingNotifier,
+            builder: (context, isSyncing, child) {
+              if (!isSyncing) return const SizedBox.shrink();
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                color: Colors.blue.shade50,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 12, height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Syncing offline scans...",
+                      style: GoogleFonts.inter(fontSize: 12, color: Colors.blue.shade700),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          Expanded(
+            child: ResponsiveWrapper(
+              mobileBody: _buildMobileLayout(context),
+              webBody: _buildWebLayout(context),
+            ),
+          ),
+        ],
       ),
     );
   }

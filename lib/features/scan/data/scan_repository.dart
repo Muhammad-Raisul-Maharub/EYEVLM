@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../core/services/offline_sync_service.dart';
 import '../../../core/database_helper.dart';
 import '../../../core/services/offline_auth_service.dart';
@@ -33,9 +34,7 @@ class ScanRepository {
     String? userId = user?.id;
     
     // Fallback to cached userId if offline/session expired
-    if (userId == null) {
-      userId = await OfflineAuthService().getCachedUserId();
-    }
+    userId ??= await OfflineAuthService().getCachedUserId();
 
     if (userId == null) throw Exception("User not logged in");
 
@@ -48,12 +47,40 @@ class ScanRepository {
     // This ensures data is immediately available in History, even offline
     final String localScanId = '${userId}_${DateTime.now().millisecondsSinceEpoch}';
     
+    // Create new Persistent Paths list to populate
+    List<String> persistentPaths = [];
+    
     if (!kIsWeb) {
       try {
+        final appDir = await getApplicationDocumentsDirectory();
+        final localScansDir = Directory('${appDir.path}/scans_local');
+        if (!await localScansDir.exists()) {
+          await localScansDir.create(recursive: true);
+        }
+        
+        // Copy images to persistent location
+        for (int i = 0; i < imagePaths.length; i++) {
+           try {
+             final originalFile = File(imagePaths[i]);
+             if (await originalFile.exists()) {
+               final fileName = 'scan_${localScanId}_$i.${imagePaths[i].split('.').last}';
+               final newPath = '${localScansDir.path}/$fileName';
+               await originalFile.copy(newPath);
+               persistentPaths.add(newPath);
+               debugPrint("📁 Persisted local image: $newPath");
+             } else {
+               persistentPaths.add(imagePaths[i]); // Fallback
+             }
+           } catch (e) {
+             debugPrint("⚠️ Failed to persist image $i: $e");
+             persistentPaths.add(imagePaths[i]); // Fallback
+           }
+        }
+
         await DatabaseHelper.instance.createScan({
           'id': localScanId,
           'user_id': userId,
-          'image_paths': imagePaths,
+          'image_paths': persistentPaths.isNotEmpty ? persistentPaths : imagePaths, // Use persistent path
           'symptoms': formData['suspected_disease'],
           'ai_prediction': 'Pending',
           'confidence': 0.0,
@@ -69,6 +96,9 @@ class ScanRepository {
         debugPrint("⚠️ Failed to save locally: $e");
         // Continue anyway - try online upload
       }
+    } else {
+      // Web fallback
+      persistentPaths = imagePaths;
     }
 
     // ========== STEP 2: CHECK CONNECTIVITY ==========
@@ -80,7 +110,7 @@ class ScanRepository {
         debugPrint("📴 Offline - scan saved locally, will sync later");
         // Queue for background sync
         await OfflineSyncService.instance.queueScan(
-          imagePaths: imagePaths,
+          imagePaths: persistentPaths.isNotEmpty ? persistentPaths : imagePaths,
           formData: formData,
           attachments: attachments,
         );
@@ -318,48 +348,119 @@ class ScanRepository {
   }
 
   /// Fetches all scan records for the current user
-  Future<List<Map<String, dynamic>>> getUserScans() async {
+  /// MERGES local and remote data to ensure offline scans are visible
+  /// This is the unified source of truth for History and Profile screens
+  Future<List<Map<String, dynamic>>> getAllScansMerged() async {
     final userId = _supabase.auth.currentUser?.id ?? await OfflineAuthService().getCachedUserId();
     if (userId == null) return [];
 
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOnline = connectivityResult.any((r) => r != ConnectivityResult.none);
-
     final dbHelper = DatabaseHelper.instance;
+    
+    // 1. Get ALL local scans (Offline Source)
+    final localScans = await dbHelper.getAllScans(userId: userId);
+    
+    // 2. Check Connectivity
+    bool isOnline = false;
+    try {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      isOnline = connectivityResult.any((r) => r != ConnectivityResult.none);
+    } catch (_) {
+      // Default to offline if check fails
+      isOnline = false;
+    }
 
-    if (isOnline) {
-      try {
-        final response = await _supabase
-            .from('scans')
-            .select()
-            .eq('user_id', userId)
-            .order('created_at', ascending: false);
+    if (!isOnline) {
+      debugPrint("📴 Offline: Returning ${localScans.length} local scans");
+      return localScans;
+    }
 
-        final scans = List<Map<String, dynamic>>.from(response);
+    // 3. Online: Fetch Remote Scans (Cloud Source)
+    try {
+      final response = await _supabase
+          .from('scans')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false)
+          .timeout(const Duration(seconds: 10)); // Prevent hanging indefinitely
+      
+      final remoteScans = List<Map<String, dynamic>>.from(response);
+      debugPrint("🌐 Online: Fetched ${remoteScans.length} remote scans");
 
-        // Cache scans locally
-        for (var scan in scans) {
-          await dbHelper.createScan(scan);
-          await dbHelper.markAsSynced(scan['id'].toString());
+      // 4. Merge Logic
+      // - Remote scans take precedence (they have AI results)
+      // - Local scans are kept ONLY if they are NOT in remote list (Pending Uploads)
+      
+      final Map<String, Map<String, dynamic>> remoteById = {};
+      for (final scan in remoteScans) {
+        remoteById[scan['id'].toString()] = scan;
+      }
+      
+      final List<Map<String, dynamic>> merged = List.from(remoteScans);
+      
+      for (final local in localScans) {
+        final localId = local['id'].toString();
+        
+        // If ID exists in remote, we already have the latest version (from remote list)
+        if (remoteById.containsKey(localId)) continue;
+        
+        // If it's not in remote, check if it was supposed to be synced
+        final isSynced = local['is_synced'] == 1 || (local['image_url'] != null && local['image_url'].toString().startsWith('http'));
+        
+        // If marked synced locally but missing from remote -> It was DELETED remotely.
+        // We should prune it locally and NOT show it.
+        if (isSynced) {
+          // Asynchronously prune dead local record
+          dbHelper.deleteScan(localId); 
+          
+          // Also cleanup the local file if it exists and is not referenced by queue
+          // (Simple cleanup: if path contains 'scans_local', try delete)
+           final paths = local['image_paths'];
+           if (paths is List) {
+             for (var p in paths) {
+               if (p.toString().contains('scans_local')) {
+                 try {
+                   final f = File(p.toString());
+                   if (await f.exists()) await f.delete();
+                 } catch (_) {}
+               }
+             }
+           }
+          continue; 
         }
 
-        // Sort just in case API didn't (ensure newest first)
-        scans.sort((a, b) {
-           final da = DateTime.tryParse(a['created_at'].toString()) ?? DateTime(1970);
-           final db = DateTime.tryParse(b['created_at'].toString()) ?? DateTime(1970);
-           return db.compareTo(da); // Newest first
-        });
+        // Check for duplicates by filename (for legacy/offline compatibility)
+        bool isDuplicate = false;
+        final localPath = local['image_url']?.toString() ?? '';
+        if (localPath.startsWith('/')) { // File path
+           final fileName = localPath.split('/').last;
+           isDuplicate = remoteScans.any((r) => (r['image_url']?.toString() ?? '').contains(fileName));
+        }
 
-        return scans;
-      } catch (e) {
-        debugPrint("⚠️ Online fetch failed, falling back to local DB: $e");
-        return await dbHelper.getAllScans(userId: userId);
+        if (!isDuplicate) {
+           // It's a genuine pending/local-only scan
+           merged.add(local);
+        }
       }
-    } else {
-      // Offline: Fetch from local DB
-      debugPrint("📴 OFFLINE: Fetching scans from local DB");
-      return await dbHelper.getAllScans(userId: userId);
+      
+      // 5. Sort Merged List (Newest First)
+      merged.sort((a, b) {
+        final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime(1970);
+        final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime(1970);
+        return bDate.compareTo(aDate);
+      });
+      
+      return merged;
+
+    } catch (e) {
+      debugPrint("⚠️ Failed to sync remote scans: $e");
+      // Fallback to local
+      return localScans;
     }
+  }
+
+  /// Deprecated: Use getAllScansMerged instead
+  Future<List<Map<String, dynamic>>> getUserScans() async {
+    return getAllScansMerged();
   }
 
   /// Gets a single scan by ID

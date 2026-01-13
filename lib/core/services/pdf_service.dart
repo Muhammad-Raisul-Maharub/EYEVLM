@@ -5,9 +5,9 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 // Conditional import for web
 import 'pdf_download_stub.dart'
     if (dart.library.html) 'pdf_download_web.dart' as pdf_download;
@@ -235,20 +235,33 @@ class PdfService {
 
     // 2. Fallback to Supabase download if no local image
     if (imageBytes == null && scan['image_url'] != null) {
+      // Check connectivity first to avoid crash
+      bool isOnline = true;
       try {
-        final String imageUrl = scan['image_url'];
-        final uri = Uri.parse(imageUrl);
-        final segments = uri.pathSegments;
-        final bucketIndex = segments.indexOf('eye-images');
-        
-        if (bucketIndex != -1) {
-             final storagePath = segments.sublist(bucketIndex + 1).join('/');
-             final response = await Supabase.instance.client.storage.from('eye-images').download(storagePath);
-             imageBytes = response;
-             debugPrint("✅ PdfService: Downloaded image for PDF");
+        final connectivity = await Connectivity().checkConnectivity();
+        if (connectivity.contains(ConnectivityResult.none)) {
+          isOnline = false;
         }
-      } catch (e) {
-        debugPrint("⚠️ PdfService: Could not fetch image for PDF: $e");
+      } catch (_) {}
+
+      if (isOnline) {
+        try {
+          final String imageUrl = scan['image_url'];
+          final uri = Uri.parse(imageUrl);
+          final segments = uri.pathSegments;
+          final bucketIndex = segments.indexOf('eye-images');
+          
+          if (bucketIndex != -1) {
+               final storagePath = segments.sublist(bucketIndex + 1).join('/');
+               final response = await Supabase.instance.client.storage.from('eye-images').download(storagePath);
+               imageBytes = response;
+               debugPrint("✅ PdfService: Downloaded image for PDF");
+          }
+        } catch (e) {
+          debugPrint("⚠️ PdfService: Could not fetch image for PDF: $e");
+        }
+      } else {
+        debugPrint("📴 PdfService: Offline, skipping remote image download");
       }
     }
     

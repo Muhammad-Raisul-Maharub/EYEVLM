@@ -6,7 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/services/offline_sync_service.dart'; // Ensure connectivity check availability
+// Ensure connectivity check availability
+import '../../core/database_helper.dart'; // Local database
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Admin service for managing all user scans
@@ -22,73 +23,99 @@ class AdminService {
     String? sortBy,
     bool ascending = false,
   }) async {
+    List<Map<String, dynamic>> results = [];
+    final userId = _supabase.auth.currentUser?.id;
+
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
       final isOnline = connectivityResult.any((r) => r != ConnectivityResult.none);
 
+      // 1. Fetch Remote Scans (if online)
       if (isOnline) {
-        // Online: Fetch from Supabase
         var query = _supabase
             .from('scans')
             .select('*')
             .limit(limit)
             .range(offset, offset + limit - 1);
         
-        // Apply sorting
         if (sortBy != null) {
           query = query.order(sortBy, ascending: ascending);
         } else {
           query = query.order('created_at', ascending: false);
         }
         
-        final response = await query;
-        List<Map<String, dynamic>> results;
-        
-        // Filter by search query if provided (filtering locally after fetch for simplicity with text search)
-        if (searchQuery != null && searchQuery.isNotEmpty) {
-          final searchLower = searchQuery.toLowerCase();
-          results = (response as List<dynamic>).where((scan) {
-            final prediction = (scan['prediction'] ?? '').toString().toLowerCase();
-            final symptoms = (scan['symptoms'] ?? '').toString().toLowerCase();
-            final notes = (scan['notes'] ?? '').toString().toLowerCase();
-            return prediction.contains(searchLower) ||
-                   symptoms.contains(searchLower) ||
-                   notes.contains(searchLower);
-          }).map((e) => e as Map<String, dynamic>).toList();
-        } else {
-          results = (response as List<dynamic>)
-            .map((e) => e as Map<String, dynamic>)
-            .toList();
-        }
+        final response = await query.timeout(const Duration(seconds: 10)); // Prevent hanging
+        results = List<Map<String, dynamic>>.from(response);
 
-        // Cache results if it's the default view (no search/sort or just basic sort)
+        // Cache for offline use
         if (offset == 0 && (searchQuery == null || searchQuery.isEmpty)) {
            await _cacheScans(results);
         }
-
-        return results;
       } else {
         // Offline: Fetch from Cache
         debugPrint("📴 AdminService: Fetching from cache");
-        final cached = await _getCachedScans();
-        
-        if (searchQuery != null && searchQuery.isNotEmpty) {
-           final searchLower = searchQuery.toLowerCase();
-           return cached.where((scan) {
-            final prediction = (scan['prediction'] ?? '').toString().toLowerCase();
-            final symptoms = (scan['symptoms'] ?? '').toString().toLowerCase();
-            final notes = (scan['notes'] ?? '').toString().toLowerCase();
-            return prediction.contains(searchLower) ||
-                   symptoms.contains(searchLower) ||
-                   notes.contains(searchLower);
-          }).toList();
-        }
-        return cached;
+        results = await _getCachedScans();
       }
+
+      // 2. Fetch Local Unsynced Scans (if user is logged in)
+      if (userId != null) {
+        try {
+          // Get all local scans for the admin user
+          final localScans = await DatabaseHelper.instance.getAllScans(userId: userId);
+          // Filter only those that are NOT synced (pending)
+          // We also filter out those that might naturally be in the 'results' list if we just synced them but local DB hasn't updated 'is_synced' yet 
+          // (though ScanRepository updates it immediately). 
+          // Safest check is ID containment.
+          
+          final remoteIds = results.map((s) => s['id'].toString()).toSet();
+          
+          final pendingLocal = localScans.where((local) {
+             final localId = local['id'].toString();
+             // Must not be in remote list
+             if (remoteIds.contains(localId)) return false;
+             
+             // Must be unsynced OR have a local file path
+             final isSynced = local['is_synced'] == 1 || (local['image_url'] != null && local['image_url'].toString().startsWith('http'));
+             return !isSynced;
+          }).toList();
+          
+          if (pendingLocal.isNotEmpty) {
+             debugPrint("➕ AdminService: Adding ${pendingLocal.length} local pending scans to dashboard");
+             results.addAll(pendingLocal);
+          }
+        } catch (e) {
+          debugPrint("⚠️ AdminService: Failed to load local scans: $e");
+        }
+      }
+
+      // 3. Filter by Search Query (Client-side for unified list)
+      if (searchQuery != null && searchQuery.isNotEmpty) {
+        final searchLower = searchQuery.toLowerCase();
+        results = results.where((scan) {
+          final prediction = (scan['prediction'] ?? '').toString().toLowerCase();
+          final symptoms = (scan['symptoms'] ?? '').toString().toLowerCase();
+          final notes = (scan['notes'] ?? '').toString().toLowerCase();
+          return prediction.contains(searchLower) ||
+                 symptoms.contains(searchLower) ||
+                 notes.contains(searchLower);
+        }).toList();
+      }
+
+      // 4. Final Sort (to mix local and remote correctly)
+      results.sort((a, b) {
+        final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime(1970);
+        final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime(1970);
+        return ascending ? aDate.compareTo(bDate) : bDate.compareTo(aDate);
+      });
+
+      return results;
+
     } catch (e) {
       debugPrint('❌ AdminService.getAllScans error: $e');
-      // On error (e.g. timeout), try cache
-      return await _getCachedScans();
+      // On error, try cache + local
+      final cached = await _getCachedScans();
+      // We could add local here too, but simple fallback is safest
+      return cached;
     }
   }
 
@@ -152,13 +179,20 @@ class AdminService {
   /// Returns null if successful, or error message string if failed
   Future<String?> updateScan(dynamic scanId, Map<String, dynamic> updates) async {
     try {
+      // Check connectivity
+      final connectivityResult = await Connectivity().checkConnectivity();
+      if (connectivityResult.any((r) => r == ConnectivityResult.none)) {
+        return "Cannot update scan while offline";
+      }
+
       // Add updated timestamp
       updates['updated_at'] = DateTime.now().toIso8601String();
       
       await _supabase
           .from('scans')
           .update(updates)
-          .eq('id', scanId);
+          .eq('id', scanId)
+          .timeout(const Duration(seconds: 10));
       
       debugPrint('✅ Scan $scanId updated successfully');
       return null; // Success
@@ -169,7 +203,7 @@ class AdminService {
   }
 
   /// Delete a scan and all associated files
-  Future<bool> deleteScan(int scanId, String? imageUrl) async {
+  Future<bool> deleteScan(dynamic scanId, String? imageUrl) async {
     try {
       // First, delete associated images from storage
       if (imageUrl != null && imageUrl.isNotEmpty) {
@@ -177,10 +211,17 @@ class AdminService {
       }
       
       // Delete the scan record
-      await _supabase
-          .from('scans')
-          .delete()
-          .eq('id', scanId);
+      if (scanId is int) {
+         // Remote Scan
+         await _supabase
+            .from('scans')
+            .delete()
+            .eq('id', scanId)
+            .timeout(const Duration(seconds: 10));
+      } else {
+         // Local Scan (String ID)
+         await DatabaseHelper.instance.deleteScan(scanId.toString());
+      }
       
       debugPrint('✅ Scan $scanId deleted successfully');
       return true;
@@ -191,7 +232,7 @@ class AdminService {
   }
 
   /// Delete multiple scans
-  Future<int> deleteMultipleScans(List<int> scanIds) async {
+  Future<int> deleteMultipleScans(List<dynamic> scanIds) async {
     int deletedCount = 0;
     
     for (final scanId in scanIds) {

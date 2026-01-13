@@ -151,10 +151,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             color: Colors.white.withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.remove_red_eye,
-                            size: 64,
-                            color: Colors.white,
+                          child: Image.asset(
+                            'assets/images/icon.png',
+                            height: 64,
+                            width: 64,
                           ),
                         ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
                         const SizedBox(height: 20),
@@ -231,10 +231,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           color: Colors.white.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.remove_red_eye_rounded,
-                          size: 80,
-                          color: Colors.white,
+                        child: Image.asset(
+                          'assets/images/icon.png',
+                          height: 80,
+                          width: 80,
                         ),
                       ).animate().scale(duration: 800.ms, curve: Curves.elasticOut),
                       const SizedBox(height: 32),

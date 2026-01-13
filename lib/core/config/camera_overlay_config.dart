@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 class CameraOverlayConfig {
   // The Single Source of Truth for both UI and Logic

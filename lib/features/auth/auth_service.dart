@@ -19,6 +19,9 @@ class AuthService {
   final Ref _ref;
   final GoTrueClient _auth = Supabase.instance.client.auth;
   
+  // Fake user for offline sessions
+  User? _offlineUser;
+  
   // Admin email constant
   static const String adminEmail = 'admin@eyevlm.com';
 
@@ -98,7 +101,13 @@ class AuthService {
       // Cache credentials for offline use
       final user = _auth.currentUser;
       if (user != null) {
-        await _ref.read(offlineAuthServiceProvider).saveCredentials(email, password, user.id);
+        // Cache with metadata (name, etc.)
+        await _ref.read(offlineAuthServiceProvider).saveCredentials(
+          email, 
+          password, 
+          user.id,
+          user.userMetadata,
+        );
       }
       
       debugPrint('✅ Online login successful, credentials cached');
@@ -111,7 +120,22 @@ class AuthService {
         throw Exception('Offline login failed. Please connect to the internet or check your credentials.');
       }
       
-      debugPrint('✅ Offline login successful');
+      // Construct offline user object
+      final userId = await offlineAuth.getCachedUserId();
+      final userMetadata = await offlineAuth.getCachedMetadata();
+      
+      if (userId != null) {
+        _offlineUser = User(
+          id: userId,
+          appMetadata: {'provider': 'email', 'providers': ['email']}, // Basic metadata
+          userMetadata: userMetadata,
+          aud: 'authenticated',
+          createdAt: DateTime.now().toIso8601String(),
+          email: email,
+        );
+      }
+      
+      debugPrint('✅ Offline login successful for: ${_offlineUser?.email}');
     }
   }
 
@@ -136,10 +160,11 @@ class AuthService {
     
     // Always clear cached credentials on logout
     await _ref.read(offlineAuthServiceProvider).clearCredentials();
+    _offlineUser = null;
   }
 
   /// Get current user (may be null if offline and not logged in via Supabase)
-  User? get currentUser => _auth.currentUser;
+  User? get currentUser => _auth.currentUser ?? _offlineUser;
   
   /// Check if user is logged in (online or offline)
   Future<bool> isLoggedIn() async {

@@ -13,6 +13,7 @@ import 'package:eyevlm_app/core/theme/app_tokens.dart';
 import 'package:eyevlm_app/core/utils/app_notifications.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart'; // Added for persistent storage
 import 'package:eyevlm_app/core/providers/refresh_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -42,10 +43,10 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
         title: Text(_capturedImages.isEmpty ? "New Scan" : "Captured (${_capturedImages.length}/$maxImages)"),
         actions: [
           if (_capturedImages.isNotEmpty)
-            TextButton.icon(
-              onPressed: _capturedImages.isNotEmpty ? _proceedToForm : null,
-              icon: const Icon(Icons.arrow_forward, color: Colors.white),
-              label: const Text("Next", style: TextStyle(color: Colors.white)),
+            IconButton(
+              onPressed: () => setState(() => _capturedImages.clear()),
+              icon: const Icon(Icons.delete_sweep, color: Colors.white),
+              tooltip: "Clear All",
             ),
         ],
       ),
@@ -54,17 +55,7 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
           : _capturedImages.isEmpty
               ? _buildCaptureOptions()
               : _buildImageGallery(),
-      floatingActionButton: _capturedImages.isNotEmpty && _capturedImages.length < maxImages
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 65), // Increased to 65px as requested
-              child: FloatingActionButton.extended(
-                onPressed: _showAddMoreOptions,
-                backgroundColor: AppColors.lightPrimary,
-                icon: const Icon(Icons.add_a_photo),
-                label: const Text("Add More"),
-              ),
-            )
-          : null,
+
     );
   }
 
@@ -278,22 +269,22 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => setState(() => _capturedImages.clear()),
-                    icon: const Icon(Icons.delete_sweep),
-                    label: const Text("Clear All"),
+                    onPressed: _capturedImages.length < maxImages ? _showAddMoreOptions : null,
+                    icon: const Icon(Icons.add_a_photo),
+                    label: const Text("Add More"),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      foregroundColor: Colors.red,
+                      // Disable color if max reached
+                      foregroundColor: _capturedImages.length < maxImages ? AppColors.lightPrimary : Colors.grey,
                     ),
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  flex: 2,
                   child: ElevatedButton.icon(
                     onPressed: _capturedImages.isNotEmpty ? _proceedToForm : null,
                     icon: const Icon(Icons.arrow_forward),
-                    label: const Text("Continue to Form"),
+                    label: const Text("Continue"),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: AppColors.lightPrimary,
@@ -357,6 +348,29 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
     );
   }
 
+
+
+  /// Helper to persist image to app documents to prevent cache deletion/path loss
+  Future<String?> _persistSessionImage(String sourcePath) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final sessionDir = Directory('${appDir.path}/scan_session_temp');
+      if (!await sessionDir.exists()) {
+        await sessionDir.create(recursive: true);
+      }
+      
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final ext = sourcePath.split('.').last;
+      final newPath = '${sessionDir.path}/temp_scan_${timestamp}_${_capturedImages.length}.$ext';
+      
+      await File(sourcePath).copy(newPath);
+      return newPath;
+    } catch (e) {
+      debugPrint("⚠️ Failed to persist session image: $e");
+      return null; // Fallback to source path if copy fails
+    }
+  }
+
   /// Open camera to capture new image
   Future<void> _openCamera() async {
     if (_capturedImages.length >= maxImages) {
@@ -369,9 +383,12 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
       final XFile? image = await picker.pickImage(source: ImageSource.camera);
       
       if (image != null && mounted) {
-        final bytes = await File(image.path).readAsBytes();
+        // Persist immediately
+        final persistentPath = await _persistSessionImage(image.path) ?? image.path;
+        final bytes = await File(persistentPath).readAsBytes();
+        
         setState(() {
-          _capturedImages.add(_CapturedImage(path: image.path, bytes: bytes, isCropped: false));
+          _capturedImages.add(_CapturedImage(path: persistentPath, bytes: bytes, isCropped: false));
         });
       }
     } catch (e) {
@@ -393,9 +410,12 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
       final XFile? image = await picker.pickImage(source: ImageSource.gallery);
       
       if (image != null && mounted) {
-        final bytes = await File(image.path).readAsBytes();
+         // Persist immediately
+        final persistentPath = await _persistSessionImage(image.path) ?? image.path;
+        final bytes = await File(persistentPath).readAsBytes();
+        
         setState(() {
-          _capturedImages.add(_CapturedImage(path: image.path, bytes: bytes, isCropped: false));
+          _capturedImages.add(_CapturedImage(path: persistentPath, bytes: bytes, isCropped: false));
         });
       }
     } catch (e) {
@@ -470,11 +490,14 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
     );
 
     if (croppedFile != null && mounted) {
-      final bytes = await croppedFile.readAsBytes();
+      // Persist cropped image
+      final persistentPath = await _persistSessionImage(croppedFile.path) ?? croppedFile.path;
+      final bytes = await File(persistentPath).readAsBytes();
+      
       if (!mounted) return;
       setState(() {
         _capturedImages[index] = _CapturedImage(
-          path: croppedFile.path,
+          path: persistentPath,
           bytes: bytes,
           isCropped: true,
         );
@@ -497,9 +520,12 @@ class _ScanFlowScreenState extends ConsumerState<ScanFlowScreen> {
       final XFile? image = await picker.pickImage(source: ImageSource.camera);
 
       if (image != null && mounted) {
-        final bytes = await File(image.path).readAsBytes();
+        // Persist immediately
+        final persistentPath = await _persistSessionImage(image.path) ?? image.path;
+        final bytes = await File(persistentPath).readAsBytes();
+
         setState(() {
-          _capturedImages[index] = _CapturedImage(path: image.path, bytes: bytes, isCropped: false);
+          _capturedImages[index] = _CapturedImage(path: persistentPath, bytes: bytes, isCropped: false);
         });
       }
     } catch (e) {
